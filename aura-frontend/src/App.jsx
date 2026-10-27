@@ -1,122 +1,170 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
+
+import Dashboard from './pages/Dashboard'
+
+function App() {
+  return <Dashboard />
+}
+
+export default App
+
+
+/*
 import './App.css'
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
+    <div className="app">
+      <header className="navbar">
+        <a className="brand" href="#home">
+          <span className="brand-icon">A</span>
+          <span>AURA</span>
+        </a>
+
+        <nav>
+          <a href="#home">Home</a>
+          <a href="#features">Features</a>
+          <a href="#about">About</a>
+        </nav>
+
         <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
+          className="login-button"
+          onClick={() => alert('Login will be added later!')}
         >
-          Count is {count}
+          Get Started
         </button>
-      </section>
+      </header>
 
-      <div className="ticks"></div>
+      <main>
+        <section className="hero-section" id="home">
+          <div className="hero-content">
+            <span className="eyebrow">YOUR ACADEMIC PROJECT COMPANION</span>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+            <h1>
+              Know what to do
+              <br />
+              <span>next.</span>
+            </h1>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+            <p>
+              Keep your academic projects organized. Track submissions,
+              understand instructor feedback, and turn revisions into
+              manageable tasks — all in one place.
+            </p>
+
+            <a className="primary-button" href="#features">
+              Explore AURA <span>→</span>
+            </a>
+
+            <div className="hero-note">
+              <span className="status-dot"></span>
+              Your projects, feedback, and next steps in one place
+            </div>
+          </div>
+
+          <div className="preview-card">
+            <div className="preview-header">
+              <div>
+                <span className="preview-label">PROJECT OVERVIEW</span>
+                <h2>My Workspace</h2>
+              </div>
+              <span className="avatar">S</span>
+            </div>
+
+            <div className="progress-card">
+              <div className="progress-top">
+                <span>Research Project</span>
+                <span className="status-badge">In Progress</span>
+              </div>
+              <p>Chapter 1 — Introduction</p>
+              <div className="progress-track">
+                <div className="progress-fill"></div>
+              </div>
+              <small>60% complete</small>
+            </div>
+
+            <div className="next-action">
+              <div className="action-icon">✓</div>
+              <div>
+                <span className="preview-label">YOUR NEXT ACTION</span>
+                <h3>Revise the research objectives</h3>
+                <p>Based on your instructor's feedback</p>
+              </div>
+            </div>
+
+            <div className="feedback-card">
+              <span className="feedback-mark">“</span>
+              <div>
+                <span className="preview-label">INSTRUCTOR FEEDBACK</span>
+                <p>
+                  Clarify the objectives and make sure they align with your
+                  research questions.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="features-section" id="features">
+          <div className="section-heading">
+            <span className="eyebrow">MADE FOR STUDENT PROJECTS</span>
+            <h2>Less confusion. More progress.</h2>
+            <p>
+              A clearer way to manage your academic work from submission
+              to revision.
+            </p>
+          </div>
+
+          <div className="feature-grid">
+            <article className="feature-card">
+              <div className="feature-icon">01</div>
+              <h3>Organize Projects</h3>
+              <p>
+                Keep your project components and submissions organized in
+                one workspace.
+              </p>
+            </article>
+
+            <article className="feature-card">
+              <div className="feature-icon">02</div>
+              <h3>Track Feedback</h3>
+              <p>
+                Review instructor comments and follow the status of each
+                submission.
+              </p>
+            </article>
+
+            <article className="feature-card">
+              <div className="feature-icon">03</div>
+              <h3>Know Your Next Step</h3>
+              <p>
+                Turn feedback into specific revision tasks so you know
+                what needs to be done next.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section className="about-section" id="about">
+          <span className="eyebrow">ABOUT AURA</span>
+          <h2>Feedback should lead to action.</h2>
+          <p>
+            AURA stands for Academic Updates, Revisions, and Actions. It
+            helps students keep track of what they submitted, what needs
+            improvement, and what they should do next.
+          </p>
+        </section>
+      </main>
+
+      <footer className="footer">
+        <a className="brand" href="#home">
+          <span className="brand-icon">A</span>
+          <span>AURA</span>
+        </a>
+        <p>Academic Updates, Revisions, and Actions</p>
+      </footer>
+    </div>
   )
 }
 
 export default App
+*/
