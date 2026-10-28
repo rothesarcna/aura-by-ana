@@ -1,6 +1,8 @@
 # AURA
 ## Academic Updates, Revisions, and Actions: Know What to Do Next
 
+###CLICK UP: https://app.clickup.com/1300420000011552/v/s/1300420000056076
+
 AURA is a full-stack application designed to help students track academic project submissions, instructor feedback, revisions, and next actions.
 
 ### Technology Stack
