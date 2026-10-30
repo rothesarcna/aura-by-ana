@@ -1,13 +1,33 @@
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import Dashboard from "./pages/Dashboard";
+import SectionPage, { DashboardHome } from "./pages/dashboard/SectionPage";
+import { getCurrentUser } from "./services/authService";
 
-import Dashboard from './pages/Dashboard'
-
-function App() {
-  return <Dashboard />
+function ProtectedRoute({ children }) {
+  return getCurrentUser() ? children : <Navigate to="/login" replace />;
 }
 
-export default App
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
 
+        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>}>
+          <Route index element={<DashboardHome />} />
+          <Route path=":section" element={<SectionPage />} />
+          <Route path=":section/:view" element={<SectionPage />} />
+        </Route>
 
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
 /*
 import './App.css'
 

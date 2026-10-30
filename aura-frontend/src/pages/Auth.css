@@ -1,0 +1,115 @@
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: linear-gradient(135deg, #eef2ff, #f8fafc);
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: #fff;
+  padding: 32px;
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(30, 41, 59, 0.12);
+}
+
+.auth-logo {
+  margin: 0;
+  text-align: center;
+  font-size: 2rem;
+  letter-spacing: 4px;
+  color: #4f46e5;
+}
+
+.auth-tagline {
+  margin: 4px 0 20px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.auth-card h2 {
+  margin: 0 0 16px;
+  font-size: 1.2rem;
+  color: #1e293b;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 14px;
+}
+
+.auth-field label {
+  margin-bottom: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.auth-field input {
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.auth-field input:focus {
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+.auth-field input.invalid {
+  border-color: #dc2626;
+}
+
+.auth-error {
+  margin-top: 4px;
+  font-size: 0.78rem;
+  color: #dc2626;
+}
+
+.auth-alert {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.auth-alert.error { background: #fef2f2; color: #b91c1c; }
+.auth-alert.success { background: #f0fdf4; color: #15803d; }
+
+.auth-btn {
+  width: 100%;
+  padding: 11px;
+  margin-top: 4px;
+  border: none;
+  border-radius: 8px;
+  background: #4f46e5;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.auth-btn:hover { background: #4338ca; }
+
+.auth-switch {
+  margin: 16px 0 0;
+  text-align: center;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.auth-switch a {
+  color: #4f46e5;
+  font-weight: 600;
+  text-decoration: none;
+}
