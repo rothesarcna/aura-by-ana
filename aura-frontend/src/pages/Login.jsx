@@ -10,7 +10,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
 
@@ -19,7 +19,7 @@ export default function Login() {
     }
 
     try {
-      loginStudent(identifier, password);
+      await loginStudent(identifier, password);
       navigate("/dashboard");
     } catch (err) {
       setError(err.message);
