@@ -40,4 +40,19 @@ public class AuthController {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
+
+    @PutMapping("/change-password")
+    public ResponseEntity<?> changePassword(@RequestBody Map<String, Object> payload) {
+        try {
+            // Convert safely in case the frontend sends the ID as an integer instead of a string
+            Long userId = Long.valueOf(payload.get("userId").toString());
+            String currentPassword = payload.get("currentPassword").toString();
+            String newPassword = payload.get("newPassword").toString();
+            
+            userService.changePassword(userId, currentPassword, newPassword);
+            return ResponseEntity.ok(Map.of("message", "Password updated successfully"));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
 }

@@ -35,4 +35,16 @@ public class UserService {
         
         return user;
     }
+
+    public void changePassword(Long userId, String currentPassword, String newPassword) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found."));
+                
+        if (!user.getPassword().equals(currentPassword)) {
+            throw new RuntimeException("Current password is incorrect.");
+        }
+        
+        user.setPassword(newPassword);
+        userRepository.save(user);
+    }
 }

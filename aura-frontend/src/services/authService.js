@@ -42,6 +42,16 @@ export async function updateProfile({ fullName, email }) {
 }
 
 export async function changePassword(current, next) {
-  // TODO: Implement Spring Boot endpoint for password changes
-  console.log("Password update requested, backend endpoint pending.");
+  const session = getCurrentUser();
+  if (!session) throw new Error("Not logged in.");
+
+  try {
+    await axios.put(`${API_URL}/change-password`, {
+      userId: session.id,
+      currentPassword: current,
+      newPassword: next
+    });
+  } catch (error) {
+    throw new Error(error.response?.data?.error || "Failed to change password.");
+  }
 }
