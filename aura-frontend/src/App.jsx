@@ -1,10 +1,10 @@
 
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import Dashboard from "./pages/Dashboard";
-import SectionPage, { DashboardHome } from "./pages/dashboard/SectionPage";
+import Login from "./pages/auth/Login";
+import Register from "./pages/auth/Register";
+import Dashboard from "./pages/dashboard/Dashboard";
+import SectionPage, { DashboardHome } from "./pages/projects/SectionPage";
 import { getCurrentUser } from "./services/authService";
 
 function ProtectedRoute({ children }) {

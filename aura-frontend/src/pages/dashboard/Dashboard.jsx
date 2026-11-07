@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { NAV, findSection } from "../config/navigation";
-import { ProjectProvider, useProject } from "../context/ProjectContext";
-import { logout } from "../services/authService";
+import { NAV, findSection } from "../../config/navigation";
+import { ProjectProvider, useProject } from "../../context/ProjectContext";
+import { logout } from "../../services/authService";
 import "./Dashboard.css";
 
 function Shell() {

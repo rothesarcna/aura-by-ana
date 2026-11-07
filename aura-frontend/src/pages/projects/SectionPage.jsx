@@ -1,17 +1,19 @@
 import { Navigate, useLocation, useParams } from "react-router-dom";
 import { findSection } from "../../config/navigation";
 import { useProject } from "../../context/ProjectContext";
-import Overview from "./Overview";
-import Components from "./Components";
-import Feedback from "./Feedback";
-import Revisions from "./Revisions";
-import Files from "./Files";
-import History from "./History";
-import Team from "./Team";
-import Account from "./Account";
-import Notifications from "./Notifications";
-import Settings from "./Settings";
-import Help from "./Help";
+
+// Corrected component import paths
+import Overview from "../dashboard/Overview";
+import Components from "../../components/common/Components";
+import Feedback from "../feedback/Feedback";
+import Revisions from "../revisions/Revisions";
+import Files from "../submissions/Files";
+import History from "../revisions/History";
+import Team from "../team/Team";
+import Account from "../account/Account";
+import Notifications from "../dashboard/Notifications";
+import Settings from "../account/Settings";
+import Help from "../help/Help";
 
 function renderPage(sid, vid) {
   switch (sid) {
@@ -32,7 +34,7 @@ function renderPage(sid, vid) {
 
 export function DashboardHome() {
   const { settings } = useProject();
-  return <Navigate to={settings.landing} replace />;
+  return <Navigate to={settings?.landing || "/dashboard"} replace />;
 }
 
 export default function SectionPage() {
@@ -42,8 +44,8 @@ export default function SectionPage() {
   const section = findSection(sid);
   if (!section) return <Navigate to="/dashboard" replace />;
 
-  const view = section.views.find((v) => v.id === vid);
-  if (!view) return <Navigate to={`/dashboard/${sid}/${section.views[0].id}`} replace />;
+  const view = section.views?.find((v) => v.id === vid);
+  if (!view) return <Navigate to={`/dashboard/${sid}/${section.views[0]?.id || ""}`} replace />;
 
   return (
     <div key={pathname}>
