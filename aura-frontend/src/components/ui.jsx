@@ -50,17 +50,25 @@ export function Empty({ text = "Nothing here yet." }) {
   return <div className="empty">{text}</div>;
 }
 
+
 export function Toggle({ checked, onChange, label, hint }) {
   return (
     <label className="toggle-row">
-      <span>
+      <span className="toggle-content">
         <strong>{label}</strong>
         {hint && <small>{hint}</small>}
       </span>
-      <input type="checkbox" className="switch" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+
+      <input
+        type="checkbox"
+        className="switch"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
     </label>
   );
 }
+
 
 // One GitHub-style commit line
 export function CommitRow({ entry }) {
@@ -84,4 +92,4 @@ export function CommitRow({ entry }) {
       <code className="hash">{entry.hash}</code>
     </div>
   );
-}
+}

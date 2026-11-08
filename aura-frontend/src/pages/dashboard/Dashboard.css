@@ -1843,3 +1843,34 @@ details.help-card > summary:hover {
 
   .project-card:hover { transform: none; }
 }
+
+
+/* Toggle alignment */
+.dash .toggle-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  gap: 16px;
+}
+
+.dash .toggle-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 1;
+  text-align: left;
+  gap: 4px;
+}
+
+.dash .toggle-content strong,
+.dash .toggle-content small {
+  text-align: left;
+}
+
+.dash .toggle-row .switch {
+  flex-shrink: 0;
+  margin-left: auto;
+}
