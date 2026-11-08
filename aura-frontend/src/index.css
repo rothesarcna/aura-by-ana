@@ -1,31 +1,77 @@
 
 :root {
-  font-family: Arial, Helvetica, sans-serif;
-  color: #183b2b;
+  /* Brand Colors */
+  --brand-blue-deep: #0a5ab3;
+  --brand-blue: #1f7fc4;
+  --brand-cyan: #50cbde;
+  --brand-green: #3db722;
+  --brand-green-deep: #2d871a;
+
+  /* Font Family */
+  --font: Arial, Helvetica, sans-serif;
+
+  /* Font Sizes */
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 15px;
+  --fs-lg: 17px;
+  --fs-xl: 21px;
+  --fs-2xl: 26px;
+  --fs-stat: 30px;
+
+  /* Line Heights */
+  --lh-tight: 1.25;
+  --lh-snug: 1.4;
+  --lh-base: 1.55;
+
+  /* Font Weights */
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+
+  /* Global Styles */
+  font-family: var(--font);
+  font-size: var(--fs-md);
+  line-height: var(--lh-base);
+  font-weight: var(--fw-regular);
+  color: #12263f;
   background: #ffffff;
+
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-* {
+/* Apply consistent box sizing */
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
+/* HTML */
 html {
   width: 100%;
   min-height: 100%;
   scroll-behavior: smooth;
 }
 
+/* Body */
 body {
   width: 100%;
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
+  font-family: var(--font);
+  font-size: var(--fs-md);
+  line-height: var(--lh-base);
+  color: #12263f;
+  background: #ffffff;
 }
 
+/* React Root */
 #root {
   width: 100%;
   min-height: 100vh;
@@ -34,6 +80,7 @@ body {
   text-align: left;
 }
 
+/* Form Elements */
 button,
 input,
 textarea,

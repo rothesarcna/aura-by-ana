@@ -114,4 +114,4 @@ export default function Files({ view }) {
       </Card>
     </>
   );
-}
+}

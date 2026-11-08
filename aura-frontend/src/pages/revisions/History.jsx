@@ -4,7 +4,7 @@ import { Card, CommitRow, Empty, StatusBadge, formatDate } from "../../component
 
 export default function History({ view }) {
   const { data, compName } = useProject();
-  const { history, feedback, components } = data;
+  const { history, feedbackHistory, components } = data;
   const [filter, setFilter] = useState("");
 
   if (view === "timeline") {
@@ -36,7 +36,7 @@ export default function History({ view }) {
   }
 
   if (view === "previous-feedback") {
-    const list = [...feedback].sort((a, b) => b.date.localeCompare(a.date));
+    const list = [...feedbackHistory].sort((a, b) => b.date.localeCompare(a.date));
     return (
       <Card>
         {list.length === 0 && <Empty />}
@@ -100,4 +100,4 @@ export default function History({ view }) {
       </table>
     </Card>
   );
-}
+}

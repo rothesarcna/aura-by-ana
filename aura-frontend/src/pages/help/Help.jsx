@@ -1,19 +1,28 @@
 import { useState } from "react";
-import { Card, StatusBadge } from "../../components/ui";
+import { StatusBadge } from "../../components/ui";
 import { STATUSES } from "../../data/mockData";
 
-const GUIDES = {
-  "getting-started": {
+/*
+ * Help & Guide = ONE page of collapsible cards (no sub-pages, no tabs).
+ * Click a card title to open or close it, or use Expand all / Collapse all.
+ */
+
+const GUIDES = [
+  {
+    id: "getting-started",
+    title: "Getting Started",
     intro: "AURA turns adviser feedback into clear revision tasks so you always know what to do next.",
     steps: [
-      "Open Overview to see your project summary, pending actions, and deadlines.",
+      "Open Dashboard to see your project summary, pending actions, and deadlines.",
       "Check Components to see every part of your project and its status.",
       "Record feedback from your adviser under Feedback & Issues.",
       "Work through revision tasks under Revision Reviews, then resubmit.",
       "Track every change in Revision History.",
     ],
   },
-  "manage-projects": {
+  {
+    id: "manage-projects",
+    title: "How to Manage Projects",
     intro: "A project is split into components (chapters, diagrams, prototype, slides).",
     steps: [
       "Open Components → Component List to see all components.",
@@ -23,7 +32,9 @@ const GUIDES = {
       "Use Team to assign tasks and track who is doing what.",
     ],
   },
-  "record-feedback": {
+  {
+    id: "record-feedback",
+    title: "How to Record Feedback",
     intro: "Record feedback as soon as you receive it so nothing gets lost.",
     steps: [
       "Go to Feedback & Issues → Add Feedback.",
@@ -33,7 +44,9 @@ const GUIDES = {
       "When you have addressed it, open Feedback Details and click Mark as resolved.",
     ],
   },
-  "manage-revisions": {
+  {
+    id: "manage-revisions",
+    title: "How to Manage Revisions",
     intro: "Each revision has a checklist of tasks that come from the feedback.",
     steps: [
       "Open Revision Reviews → For Revision.",
@@ -43,7 +56,9 @@ const GUIDES = {
       "Every status change is saved in Revision History.",
     ],
   },
-  "request-clarification": {
+  {
+    id: "request-clarification",
+    title: "How to Request Clarification",
     intro: "If feedback is unclear, ask before you revise.",
     steps: [
       "Go to Feedback & Issues → Add Feedback.",
@@ -52,7 +67,9 @@ const GUIDES = {
       "Track the answer in Clarification Requests and reply in Feedback Details.",
     ],
   },
-  "approval-workflow": {
+  {
+    id: "approval-workflow",
+    title: "Adviser Approval Workflow",
     intro: "A component is only complete when the adviser approves it.",
     steps: [
       "Finish all revision tasks for the component.",
@@ -62,7 +79,7 @@ const GUIDES = {
       "Approved components count toward your project progress.",
     ],
   },
-};
+];
 
 const MEANING = {
   Pending: "Work has not been submitted yet.",
@@ -81,23 +98,45 @@ const FAQ = [
   ["Where do I see what changed between versions?", "Revision History → Changes Made, or the Revision Timeline for a commit-style view."],
 ];
 
-export default function Help({ view }) {
+const SECTION_IDS = [...GUIDES.map((g) => g.id), "statuses", "faq", "contact"];
+
+function HelpCard({ id, title, open, onToggle, children }) {
+  return (
+    <details className="help-card" open={!!open[id]} onToggle={(e) => onToggle(id, e.currentTarget.open)}>
+      <summary>{title}</summary>
+      <div className="help-body">{children}</div>
+    </details>
+  );
+}
+
+export default function Help() {
+  const [open, setOpen] = useState({ "getting-started": true });
   const [sent, setSent] = useState(false);
   const [form, setForm] = useState({ subject: "", message: "" });
 
-  if (GUIDES[view]) {
-    const g = GUIDES[view];
-    return (
-      <Card>
-        <p>{g.intro}</p>
-        <ol className="steps">{g.steps.map((s) => <li key={s}>{s}</li>)}</ol>
-      </Card>
-    );
-  }
+  const toggle = (id, value) => setOpen((o) => (o[id] === value ? o : { ...o, [id]: value }));
+  const setAll = (value) => setOpen(Object.fromEntries(SECTION_IDS.map((id) => [id, value])));
 
-  if (view === "statuses") {
-    return (
-      <Card>
+  return (
+    <div className="help-page">
+      <div className="page-head">
+        <h1>Help &amp; Guide</h1>
+        <p>Learn how to turn adviser feedback into clear revision tasks.</p>
+      </div>
+
+      <div className="btn-row" style={{ margin: "0 0 14px" }}>
+        <button type="button" className="btn ghost small" onClick={() => setAll(true)}>Expand all</button>
+        <button type="button" className="btn ghost small" onClick={() => setAll(false)}>Collapse all</button>
+      </div>
+
+      {GUIDES.map((g) => (
+        <HelpCard key={g.id} id={g.id} title={g.title} open={open} onToggle={toggle}>
+          <p>{g.intro}</p>
+          <ol className="steps">{g.steps.map((s) => <li key={s}>{s}</li>)}</ol>
+        </HelpCard>
+      ))}
+
+      <HelpCard id="statuses" title="Understanding Revision Statuses" open={open} onToggle={toggle}>
         <table className="table">
           <thead><tr><th>Status</th><th>What it means</th></tr></thead>
           <tbody>
@@ -106,41 +145,34 @@ export default function Help({ view }) {
             ))}
           </tbody>
         </table>
-      </Card>
-    );
-  }
+      </HelpCard>
 
-  if (view === "faq") {
-    return (
-      <Card>
+      <HelpCard id="faq" title="Frequently Asked Questions" open={open} onToggle={toggle}>
         {FAQ.map(([q, a]) => (
           <details key={q} className="faq">
             <summary>{q}</summary>
             <p>{a}</p>
           </details>
         ))}
-      </Card>
-    );
-  }
+      </HelpCard>
 
-  // contact
-  return (
-    <Card title="Contact support">
-      {sent ? (
-        <div className="alert success">Message sent. We'll get back to you soon. (Demo: not actually sent yet.)</div>
-      ) : (
-        <form
-          className="form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (form.subject.trim() && form.message.trim()) setSent(true);
-          }}
-        >
-          <label>Subject<input value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} /></label>
-          <label>Message<textarea rows={5} value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} /></label>
-          <button className="btn" type="submit">Send</button>
-        </form>
-      )}
-    </Card>
+      <HelpCard id="contact" title="Contact Support" open={open} onToggle={toggle}>
+        {sent ? (
+          <div className="alert success">Message sent. We'll get back to you soon. (Demo: not actually sent yet.)</div>
+        ) : (
+          <form
+            className="form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (form.subject.trim() && form.message.trim()) setSent(true);
+            }}
+          >
+            <label>Subject<input value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} /></label>
+            <label>Message<textarea rows={5} value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} /></label>
+            <button className="btn" type="submit">Send</button>
+          </form>
+        )}
+      </HelpCard>
+    </div>
   );
 }

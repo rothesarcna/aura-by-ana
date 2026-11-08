@@ -1,9 +1,15 @@
-import { useProject } from "../context/ProjectContext";
+import { useProject } from "../context/sharedProjectContext";
 
 export const slug = (s = "") => s.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+// "2026-11-05" (date only) must be read as a local date, otherwise it can show as the previous day
+const toDate = (iso) => new Date(/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T00:00:00` : iso);
 export const formatDate = (iso) =>
-  iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
-export const daysUntil = (iso) => Math.ceil((new Date(iso) - new Date()) / 86400000);
+  iso ? toDate(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
+export const daysUntil = (iso) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((toDate(iso) - today) / 86400000);
+};
 
 export function StatusBadge({ status }) {
   return <span className={`badge badge-${slug(status)}`}>{status}</span>;
@@ -78,4 +84,4 @@ export function CommitRow({ entry }) {
       <code className="hash">{entry.hash}</code>
     </div>
   );
-}
+}
