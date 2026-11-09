@@ -42,12 +42,12 @@ public class ComponentService {
         AccessService.ProjectAccess ctx = access.require(projectId, userId);
 
         ProjectComponent c = new ProjectComponent();
-        c.setProject(ctx.project());
+        c.setProject_id(ctx.project());
         c.setName(Text.clean(req.name()));
         c.setDescription(Text.clean(req.description()));
         c.setType(req.type() == null ? ComponentType.OTHER : req.type());
         c.setDueDate(req.dueDate());
-        c.setOwner(access.assignee(projectId, req.ownerId()));
+        c.setOwner_id(access.assignee(projectId, req.ownerId()));
         c.setStatus(req.status() == null ? WorkStatus.PENDING : req.status());
         c.setProgress(c.getStatus() == WorkStatus.APPROVED ? 100 : req.progress() == null ? 0 : req.progress());
         c = components.save(c);
@@ -71,7 +71,7 @@ public class ComponentService {
         return snap.components().stream()
                 .filter(c -> wanted == null || c.getStatus() == wanted)
                 .filter(c -> Filters.inRange(c.getDueDate(), dueFrom, dueTo))
-                .filter(c -> ownerId == null || (c.getOwner() != null && ownerId.equals(c.getOwner().getId())))
+                .filter(c -> ownerId == null || (c.getOwner_id() != null && ownerId.equals(c.getOwner_id().getId())))
                 .filter(c -> Filters.matches(q, c.getName(), c.getDescription()))
                 .sorted(Comparator.comparing(ProjectComponent::getDueDate, Comparator.nullsLast(Comparator.naturalOrder()))
                         .thenComparing(ProjectComponent::getId))
@@ -99,7 +99,7 @@ public class ComponentService {
         Text.diff(changes, "type", c.getType().getLabel(), newType.getLabel());
         Text.diff(changes, "due date", c.getDueDate(), req.dueDate());
         Text.diff(changes, "progress", c.getProgress() + "%", newProgress + "%");
-        Text.diff(changes, "owner", c.getOwner() == null ? null : c.getOwner().getName(),
+        Text.diff(changes, "owner", c.getOwner_id() == null ? null : c.getOwner_id().getName(),
                 newOwner == null ? null : newOwner.getName());
         Text.diffQuiet(changes, "description", c.getDescription(), Text.clean(req.description()));
 
@@ -107,7 +107,7 @@ public class ComponentService {
         c.setDescription(Text.clean(req.description()));
         c.setType(newType);
         c.setDueDate(req.dueDate());
-        c.setOwner(newOwner);
+        c.setOwner_id(newOwner);
         c.setProgress(newProgress);
         components.save(c);
 

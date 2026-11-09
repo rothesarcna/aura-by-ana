@@ -71,14 +71,14 @@ public class OverviewService {
             if (c.getStatus() != WorkStatus.APPROVED && c.getDueDate() != null && !c.getDueDate().isAfter(limit)) {
                 deadlines.add(new DeadlineItem("COMPONENT", c.getId(), c.getName(), c.getName(), c.getDueDate(),
                         ChronoUnit.DAYS.between(today, c.getDueDate()), snap.isComponentOverdue(c),
-                        c.getStatus().getLabel(), c.getOwner() == null ? null : c.getOwner().getName()));
+                        c.getStatus().getLabel(), c.getOwner_id() == null ? null : c.getOwner_id().getName()));
             }
         }
         for (RevisionTask t : outstanding) {
             if (t.getDueDate() != null && !t.getDueDate().isAfter(limit)) {
-                deadlines.add(new DeadlineItem("TASK", t.getId(), t.getTitle(), t.getComponent().getName(), t.getDueDate(),
+                deadlines.add(new DeadlineItem("TASK", t.getId(), t.getTitle(), t.getComponent_id().getName(), t.getDueDate(),
                         ChronoUnit.DAYS.between(today, t.getDueDate()), snap.isTaskOverdue(t),
-                        t.getStatus().getLabel(), t.getAssignee() == null ? null : t.getAssignee().getName()));
+                        t.getStatus().getLabel(), t.getAssignee_id() == null ? null : t.getAssignee_id().getName()));
             }
         }
         deadlines.sort(Comparator.comparing(DeadlineItem::dueDate).thenComparing(DeadlineItem::kind).thenComparing(DeadlineItem::id));

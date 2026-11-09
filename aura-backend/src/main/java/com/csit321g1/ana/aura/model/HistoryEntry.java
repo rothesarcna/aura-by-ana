@@ -23,19 +23,19 @@ public class HistoryEntry {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "project_id", nullable = false, updatable = false)
-    private Project project;
+    private Project project_id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "component_id", updatable = false)
-    private ProjectComponent component;
+    private ProjectComponent component_id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "feedback_id", updatable = false)
-    private Feedback feedback;
+    private Feedback feedback_id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "task_id", updatable = false)
-    private RevisionTask task;
+    private RevisionTask task_id;
 
     @Enumerated(EnumType.STRING)
     @Column(length = 20, nullable = false, updatable = false)
@@ -53,7 +53,7 @@ public class HistoryEntry {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "actor_id", updatable = false)
-    private User actor;
+    private User actor_id;
 
     @Column(updatable = false)
     private String actorName;

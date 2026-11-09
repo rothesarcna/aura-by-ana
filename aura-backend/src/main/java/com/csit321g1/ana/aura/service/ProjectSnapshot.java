@@ -60,18 +60,18 @@ public class ProjectSnapshot {
         allMembers.forEach(m -> memberById.put(m.getId(), m));
         allComponents.forEach(c -> componentById.put(c.getId(), c));
         this.components = allComponents.stream().filter(c -> !c.isArchived()).collect(Collectors.toList());
-        this.feedback = allFeedback.stream().filter(f -> !f.getComponent().isArchived()).collect(Collectors.toList());
+        this.feedback = allFeedback.stream().filter(f -> !f.getComponent_id().isArchived()).collect(Collectors.toList());
         for (Feedback f : allFeedback) {
-            if (f.getPreviousFeedback() != null) {
-                supersededBy.put(f.getPreviousFeedback().getId(), f);
+            if (f.getPrevious_feedback_id() != null) {
+                supersededBy.put(f.getPrevious_feedback_id().getId(), f);
             }
         }
-        this.tasks = unarchivedTasks.stream().filter(t -> !t.getComponent().isArchived()).collect(Collectors.toList());
+        this.tasks = unarchivedTasks.stream().filter(t -> !t.getComponent_id().isArchived()).collect(Collectors.toList());
         this.tasksByFeedback = this.tasks.stream()
-                .filter(t -> t.getFeedback() != null)
-                .collect(Collectors.groupingBy(t -> t.getFeedback().getId()));
+                .filter(t -> t.getFeedback_id() != null)
+                .collect(Collectors.groupingBy(t -> t.getFeedback_id().getId()));
         this.repliesByFeedback = allReplies.stream()
-                .collect(Collectors.groupingBy(r -> r.getFeedback().getId(),
+                .collect(Collectors.groupingBy(r -> r.getFeedback_id().getId(),
                         Collectors.mapping(r -> new ReplyResponse(r.getId(), r.getAuthorName(), r.getText(), r.getCreatedAt()),
                                 Collectors.toList())));
     }
@@ -134,17 +134,17 @@ public class ProjectSnapshot {
                 m.getName(),
                 m.getEmail(),
                 m.getRole(),
-                m.getUser() == null ? null : m.getUser().getId(),
-                m.getUser() != null,
+                m.getUser_id() == null ? null : m.getUser_id().getId(),
+                m.getUser_id() != null,
                 m.isActive());
     }
 
     public ComponentResponse toComponent(ProjectComponent c) {
         int openFeedback = (int) feedback.stream()
-                .filter(f -> f.getComponent().getId().equals(c.getId()) && f.getStatus() == FeedbackStatus.OPEN)
+                .filter(f -> f.getComponent_id().getId().equals(c.getId()) && f.getStatus() == FeedbackStatus.OPEN)
                 .count();
         int openTasks = (int) tasks.stream()
-                .filter(t -> t.getComponent().getId().equals(c.getId()) && t.getStatus() != TaskStatus.DONE)
+                .filter(t -> t.getComponent_id().getId().equals(c.getId()) && t.getStatus() != TaskStatus.DONE)
                 .count();
         return new ComponentResponse(
                 c.getId(),
@@ -155,8 +155,8 @@ public class ProjectSnapshot {
                 c.getStatus(),
                 c.getDueDate(),
                 c.getProgress(),
-                c.getOwner() == null ? null : c.getOwner().getId(),
-                c.getOwner() == null ? null : c.getOwner().getName(),
+                c.getOwner_id() == null ? null : c.getOwner_id().getId(),
+                c.getOwner_id() == null ? null : c.getOwner_id().getName(),
                 isComponentOverdue(c),
                 openFeedback,
                 openTasks,
@@ -171,19 +171,19 @@ public class ProjectSnapshot {
         return new FeedbackResponse(
                 f.getId(),
                 project.getId(),
-                f.getComponent().getId(),
-                f.getComponent().getName(),
+                f.getComponent_id().getId(),
+                f.getComponent_id().getName(),
                 f.getType(),
                 f.getText(),
                 f.getGivenBy(),
                 f.getReceivedOn(),
                 f.getStatus(),
                 f.getVersionNumber(),
-                f.getPreviousFeedback() == null ? null : f.getPreviousFeedback().getId(),
+                f.getPrevious_feedback_id() == null ? null : f.getPrevious_feedback_id().getId(),
                 newer == null ? null : newer.getId(),
                 open,
                 linked.size(),
-                f.getRecordedBy() == null ? null : f.getRecordedBy().getFullName(),
+                f.getRecorded_by_id() == null ? null : f.getRecorded_by_id().getFullName(),
                 f.getCreatedAt(),
                 f.getResolvedAt(),
                 repliesByFeedback.getOrDefault(f.getId(), List.of()));
@@ -193,15 +193,15 @@ public class ProjectSnapshot {
         return new TaskResponse(
                 t.getId(),
                 project.getId(),
-                t.getComponent().getId(),
-                t.getComponent().getName(),
-                t.getFeedback() == null ? null : t.getFeedback().getId(),
-                t.getFeedback() == null ? null : Text.snippet(t.getFeedback().getText(), 120),
+                t.getComponent_id().getId(),
+                t.getComponent_id().getName(),
+                t.getFeedback_id() == null ? null : t.getFeedback_id().getId(),
+                t.getFeedback_id() == null ? null : Text.snippet(t.getFeedback_id().getText(), 120),
                 t.getTitle(),
                 t.getDescription(),
                 t.getStatus(),
-                t.getAssignee() == null ? null : t.getAssignee().getId(),
-                t.getAssignee() == null ? null : t.getAssignee().getName(),
+                t.getAssignee_id() == null ? null : t.getAssignee_id().getId(),
+                t.getAssignee_id() == null ? null : t.getAssignee_id().getName(),
                 t.getDueDate(),
                 isTaskOverdue(t),
                 t.getCompletedAt(),

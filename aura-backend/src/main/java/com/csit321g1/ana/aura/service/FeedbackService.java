@@ -65,15 +65,15 @@ public class FeedbackService {
         }
 
         Feedback f = new Feedback();
-        f.setProject(ctx.project());
-        f.setComponent(component);
+        f.setProject_id(ctx.project());
+        f.setComponent_id(component);
         f.setType(type);
         f.setText(req.text().trim());
         f.setGivenBy(givenBy);
         f.setReceivedOn(req.receivedOn() == null ? LocalDate.now() : req.receivedOn());
         f.setStatus(FeedbackStatus.OPEN);
         f.setVersionNumber(1);
-        f.setRecordedBy(ctx.user());
+        f.setRecorded_by_id(ctx.user());
         f = feedbackRepo.save(f);
 
         String label = type == FeedbackType.CLARIFICATION ? "Clarification question" : "Feedback";
@@ -99,7 +99,7 @@ public class FeedbackService {
 
         ProjectSnapshot snap = snapshots.load(ctx.project());
         return snap.feedback().stream()
-                .filter(f -> componentId == null || f.getComponent().getId().equals(componentId))
+                .filter(f -> componentId == null || f.getComponent_id().getId().equals(componentId))
                 .filter(f -> wantedStatus != null
                         ? f.getStatus() == wantedStatus
                         : includeSuperseded || f.getStatus() != FeedbackStatus.SUPERSEDED)
@@ -134,16 +134,16 @@ public class FeedbackService {
         String givenBy = Text.clean(req.givenBy()) == null ? old.getGivenBy() : Text.clean(req.givenBy());
 
         Feedback next = new Feedback();
-        next.setProject(old.getProject());
-        next.setComponent(old.getComponent());
+        next.setProject_id(old.getProject_id());
+        next.setComponent_id(old.getComponent_id());
         next.setType(old.getType());
         next.setText(req.text().trim());
         next.setGivenBy(givenBy);
         next.setReceivedOn(req.receivedOn() == null ? LocalDate.now() : req.receivedOn());
         next.setStatus(FeedbackStatus.OPEN);
         next.setVersionNumber(old.getVersionNumber() + 1);
-        next.setPreviousFeedback(old);
-        next.setRecordedBy(ctx.user());
+        next.setPrevious_feedback_id(old);
+        next.setRecorded_by_id(ctx.user());
         next = feedbackRepo.save(next);
 
         old.setStatus(FeedbackStatus.SUPERSEDED);
@@ -152,12 +152,12 @@ public class FeedbackService {
         ProjectSnapshot snap = snapshots.load(ctx.project());
         long openOnOld = snap.tasksOf(old.getId()).stream().filter(t -> t.getStatus() != TaskStatus.DONE).count();
         String reason = Text.clean(req.reason());
-        String message = "Instructions changed on \"" + old.getComponent().getName() + "\" (version "
+        String message = "Instructions changed on \"" + old.getComponent_id().getName() + "\" (version "
                 + old.getVersionNumber() + " \u2192 " + next.getVersionNumber() + ")"
                 + (reason == null ? "" : ": " + reason)
                 + (openOnOld == 0 ? "" : ". " + openOnOld + " unfinished task(s) are still linked to the previous version");
         history.entry(ctx.project(), ctx.user(), HistoryType.FEEDBACK, message)
-                .component(old.getComponent())
+                .component(old.getComponent_id())
                 .feedback(next)
                 .values("v" + old.getVersionNumber(), "v" + next.getVersionNumber())
                 .save();
@@ -184,8 +184,8 @@ public class FeedbackService {
             feedbackRepo.save(f);
             history.entry(ctx.project(), ctx.user(), HistoryType.STATUS_CHANGE,
                             (req.status() == FeedbackStatus.RESOLVED ? "Resolved" : "Reopened") + " feedback on \""
-                                    + f.getComponent().getName() + "\": " + Text.snippet(f.getText(), 100))
-                    .component(f.getComponent())
+                                    + f.getComponent_id().getName() + "\": " + Text.snippet(f.getText(), 100))
+                    .component(f.getComponent_id())
                     .feedback(f)
                     .values(before.getLabel(), req.status().getLabel())
                     .save();
@@ -199,16 +199,16 @@ public class FeedbackService {
         Feedback f = access.feedback(projectId, feedbackId);
 
         FeedbackReply r = new FeedbackReply();
-        r.setFeedback(f);
-        r.setAuthor(ctx.user());
+        r.setFeedback_id(f);
+        r.setAuthor_id(ctx.user());
         r.setAuthorName(ctx.user().getFullName());
         r.setText(req.text().trim());
         r = replies.save(r);
 
         String what = f.getType() == FeedbackType.CLARIFICATION ? "clarification" : "feedback";
         history.entry(ctx.project(), ctx.user(), HistoryType.FEEDBACK,
-                        "Added a note to " + what + " on \"" + f.getComponent().getName() + "\": " + Text.snippet(r.getText(), 100))
-                .component(f.getComponent())
+                        "Added a note to " + what + " on \"" + f.getComponent_id().getName() + "\": " + Text.snippet(r.getText(), 100))
+                .component(f.getComponent_id())
                 .feedback(f)
                 .save();
         return toReply(r);
@@ -229,8 +229,8 @@ public class FeedbackService {
     /** Oldest version first. Walks back to the first version, then forward through newer ones. */
     private List<VersionSummary> versionChain(Feedback current) {
         Feedback first = current;
-        while (first.getPreviousFeedback() != null) {
-            first = first.getPreviousFeedback();
+        while (first.getPrevious_feedback_id() != null) {
+            first = first.getPrevious_feedback_id();
         }
         List<VersionSummary> chain = new ArrayList<>();
         Feedback cursor = first;

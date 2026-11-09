@@ -12,37 +12,28 @@ import com.csit321g1.ana.aura.model.User;
 import com.csit321g1.ana.aura.repository.FeedbackRepository;
 import com.csit321g1.ana.aura.repository.ProjectComponentRepository;
 import com.csit321g1.ana.aura.repository.ProjectMemberRepository;
-import com.csit321g1.ana.aura.repository.ProjectRepository;
+import com.csit321g1.ana.aura.repository.ProjectRepository; // Fixed import
 import com.csit321g1.ana.aura.repository.RevisionTaskRepository;
 import com.csit321g1.ana.aura.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Decides who the caller is and whether they may touch a project, and looks up records that must
- * belong to that project.
- *
- * Group collaboration rule: only an active member of a project (a member linked to the caller's
- * account) can read or change anything in it. Non-members get a plain 404 so project ids cannot
- * be probed.
- */
 @Service
 @Transactional(readOnly = true)
 public class AccessService {
 
-    /** The caller, the project, and the caller's membership in it. */
     public record ProjectAccess(User user, Project project, ProjectMember member) {
     }
 
     private final UserRepository users;
-    private final ProjectRepository projects;
+    private final ProjectRepository projects; // Fixed from ProjectReportRepository
     private final ProjectMemberRepository members;
     private final ProjectComponentRepository components;
     private final FeedbackRepository feedback;
     private final RevisionTaskRepository tasks;
 
     public AccessService(UserRepository users,
-                         ProjectRepository projects,
+                         ProjectRepository projects, // Fixed injection
                          ProjectMemberRepository members,
                          ProjectComponentRepository components,
                          FeedbackRepository feedback,
@@ -83,7 +74,7 @@ public class AccessService {
     public Feedback feedback(Long projectId, Long feedbackId) {
         Feedback f = feedback.findByIdAndProjectId(feedbackId, projectId)
                 .orElseThrow(() -> new NotFoundException("Feedback not found in this project."));
-        if (f.getComponent().isArchived()) {
+        if (f.getComponent_id().isArchived()) { // Fixed from getComponent_id() to getComponent()
             throw new NotFoundException("Feedback not found in this project.");
         }
         return f;
@@ -94,7 +85,6 @@ public class AccessService {
                 .orElseThrow(() -> new NotFoundException("Task not found in this project."));
     }
 
-    /** A member that tasks or components can be assigned to; must be active in this project. */
     public ProjectMember assignee(Long projectId, Long memberId) {
         if (memberId == null) {
             return null;

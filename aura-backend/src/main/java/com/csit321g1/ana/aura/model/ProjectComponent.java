@@ -20,7 +20,7 @@ public class ProjectComponent {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "project_id", nullable = false)
-    private Project project;
+    private Project project_id;
 
     @Column(nullable = false)
     private String name;
@@ -42,7 +42,7 @@ public class ProjectComponent {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "owner_id")
-    private ProjectMember owner;
+    private ProjectMember owner_id;
 
     private boolean archived;
 

@@ -75,7 +75,7 @@ public class ProjectService {
     public List<ProjectResponse> list(Long userId) {
         User user = access.requireUser(userId);
         return members.findByUserIdAndActiveTrueAndProjectArchivedFalse(user.getId()).stream()
-                .map(ProjectMember::getProject)
+                .map(ProjectMember::getProject_id)
                 .sorted(Comparator.comparing(Project::getId).reversed())
                 .map(p -> snapshots.load(p).toProject())
                 .collect(Collectors.toList());
@@ -148,8 +148,8 @@ public class ProjectService {
 
     private void addMember(Project project, User user, String name, String email, String role) {
         ProjectMember m = new ProjectMember();
-        m.setProject(project);
-        m.setUser(user);
+        m.setProject_id(project);
+        m.setUser_id(user);
         m.setName(name);
         m.setEmail(email);
         m.setRole(role);

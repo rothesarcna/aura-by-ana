@@ -32,25 +32,25 @@ public class HistoryService {
         private final HistoryEntry entry = new HistoryEntry();
 
         private EntryBuilder(Project project, User actor, HistoryType type, String message) {
-            entry.setProject(project);
-            entry.setActor(actor);
+            entry.setProject_id(project);
+            entry.setActor_id(actor);
             entry.setActorName(actor == null ? null : actor.getFullName());
             entry.setType(type);
             entry.setMessage(message);
         }
 
         public EntryBuilder component(ProjectComponent c) {
-            entry.setComponent(c);
+            entry.setComponent_id(c);
             return this;
         }
 
         public EntryBuilder feedback(Feedback f) {
-            entry.setFeedback(f);
+            entry.setFeedback_id(f);
             return this;
         }
 
         public EntryBuilder task(RevisionTask t) {
-            entry.setTask(t);
+            entry.setTask_id(t);
             return this;
         }
 
@@ -89,10 +89,10 @@ public class HistoryService {
         return repository.findByProjectIdOrderByCreatedAtDescIdDesc(projectId).stream()
                 .filter(e -> wantedType == null || e.getType() == wantedType)
                 .filter(e -> componentId == null
-                        || (e.getComponent() != null && componentId.equals(e.getComponent().getId())))
+                        || (e.getComponent_id() != null && componentId.equals(e.getComponent_id().getId())))
                 .filter(e -> feedbackId == null
-                        || (e.getFeedback() != null && feedbackId.equals(e.getFeedback().getId())))
-                .filter(e -> taskId == null || (e.getTask() != null && taskId.equals(e.getTask().getId())))
+                        || (e.getFeedback_id() != null && feedbackId.equals(e.getFeedback_id().getId())))
+                .filter(e -> taskId == null || (e.getTask_id() != null && taskId.equals(e.getTask_id().getId())))
                 .filter(e -> Filters.inRange(
                         e.getCreatedAt() == null ? null : e.getCreatedAt().atZone(zone).toLocalDate(), from, to))
                 .filter(e -> Filters.matches(q, e.getMessage(), e.getActorName()))
@@ -112,13 +112,13 @@ public class HistoryService {
         ProjectComponent component = req.componentId() == null ? null : access.component(projectId, req.componentId());
 
         if (task != null && feedback == null) {
-            feedback = task.getFeedback();
+            feedback = task.getFeedback_id();
         }
-        if (feedback != null && task != null && task.getFeedback() != null
-                && !task.getFeedback().getId().equals(feedback.getId())) {
+        if (feedback != null && task != null && task.getFeedback_id() != null
+                && !task.getFeedback_id().getId().equals(feedback.getId())) {
             throw new BadRequestException("That task belongs to a different feedback record.");
         }
-        ProjectComponent derived = task != null ? task.getComponent() : feedback != null ? feedback.getComponent() : null;
+        ProjectComponent derived = task != null ? task.getComponent_id() : feedback != null ? feedback.getComponent_id() : null;
         if (derived != null && component != null && !derived.getId().equals(component.getId())) {
             throw new BadRequestException("The component does not match the feedback or task.");
         }
@@ -141,13 +141,13 @@ public class HistoryService {
                 e.getId(),
                 e.getType(),
                 e.getMessage(),
-                e.getComponent() == null ? null : e.getComponent().getId(),
-                e.getComponent() == null ? null : e.getComponent().getName(),
-                e.getFeedback() == null ? null : e.getFeedback().getId(),
-                e.getTask() == null ? null : e.getTask().getId(),
+                e.getComponent_id() == null ? null : e.getComponent_id().getId(),
+                e.getComponent_id() == null ? null : e.getComponent_id().getName(),
+                e.getFeedback_id() == null ? null : e.getFeedback_id().getId(),
+                e.getTask_id() == null ? null : e.getTask_id().getId(),
                 e.getOldValue(),
                 e.getNewValue(),
-                e.getActor() == null ? null : e.getActor().getId(),
+                e.getActor_id() == null ? null : e.getActor_id().getId(),
                 e.getActorName(),
                 e.getCreatedAt());
     }

@@ -57,7 +57,7 @@ public class TaskService {
 
         ProjectComponent component;
         if (feedback != null) {
-            component = feedback.getComponent();
+            component = feedback.getComponent_id();
             if (req.componentId() != null && !req.componentId().equals(component.getId())) {
                 throw new BadRequestException("The component does not match the feedback's component.");
             }
@@ -72,16 +72,16 @@ public class TaskService {
         TaskStatus status = req.status() == null ? TaskStatus.TO_DO : req.status();
 
         RevisionTask t = new RevisionTask();
-        t.setProject(ctx.project());
-        t.setComponent(component);
-        t.setFeedback(feedback);
+        t.setProject_id(ctx.project());
+        t.setComponent_id(component);
+        t.setFeedback_id(feedback);
         t.setTitle(Text.clean(req.title()));
         t.setDescription(Text.clean(req.description()));
-        t.setAssignee(assignee);
+        t.setAssignee_id(assignee);
         t.setDueDate(req.dueDate());
         t.setStatus(status);
         t.setCompletedAt(status == TaskStatus.DONE ? Instant.now() : null);
-        t.setCreatedBy(ctx.user());
+        t.setCreated_by_id(ctx.user());
         t = tasks.save(t);
 
         history.entry(ctx.project(), ctx.user(), HistoryType.TASK,
@@ -112,10 +112,10 @@ public class TaskService {
         return snap.tasks().stream()
                 .filter(t -> wanted == null || t.getStatus() == wanted)
                 .filter(t -> wantedAssignee == null
-                        || (t.getAssignee() != null && wantedAssignee.equals(t.getAssignee().getId())))
-                .filter(t -> componentId == null || t.getComponent().getId().equals(componentId))
+                        || (t.getAssignee_id() != null && wantedAssignee.equals(t.getAssignee_id().getId())))
+                .filter(t -> componentId == null || t.getComponent_id().getId().equals(componentId))
                 .filter(t -> feedbackId == null
-                        || (t.getFeedback() != null && feedbackId.equals(t.getFeedback().getId())))
+                        || (t.getFeedback_id() != null && feedbackId.equals(t.getFeedback_id().getId())))
                 .filter(t -> Filters.inRange(t.getDueDate(), dueFrom, dueTo))
                 .filter(t -> !overdue || snap.isTaskOverdue(t))
                 .filter(t -> Filters.matches(q, t.getTitle(), t.getDescription()))
@@ -149,22 +149,22 @@ public class TaskService {
 
         List<String> changes = new ArrayList<>();
         Text.diff(changes, "title", t.getTitle(), Text.clean(req.title()));
-        Text.diff(changes, "assignee", t.getAssignee() == null ? null : t.getAssignee().getName(),
+        Text.diff(changes, "assignee", t.getAssignee_id() == null ? null : t.getAssignee_id().getName(),
                 newAssignee == null ? null : newAssignee.getName());
         Text.diff(changes, "due date", t.getDueDate(), req.dueDate());
         Text.diffQuiet(changes, "description", t.getDescription(), Text.clean(req.description()));
 
         t.setTitle(Text.clean(req.title()));
         t.setDescription(Text.clean(req.description()));
-        t.setAssignee(newAssignee);
+        t.setAssignee_id(newAssignee);
         t.setDueDate(req.dueDate());
         tasks.save(t);
 
         if (!changes.isEmpty()) {
             history.entry(ctx.project(), ctx.user(), HistoryType.TASK,
                             "Updated task \"" + t.getTitle() + "\" (" + String.join("; ", changes) + ")")
-                    .component(t.getComponent())
-                    .feedback(t.getFeedback())
+                    .component(t.getComponent_id())
+                    .feedback(t.getFeedback_id())
                     .task(t)
                     .save();
         }
@@ -183,8 +183,8 @@ public class TaskService {
             tasks.save(t);
             history.entry(ctx.project(), ctx.user(), HistoryType.STATUS_CHANGE,
                             "Task \"" + t.getTitle() + "\" changed from " + before.getLabel() + " to " + after.getLabel())
-                    .component(t.getComponent())
-                    .feedback(t.getFeedback())
+                    .component(t.getComponent_id())
+                    .feedback(t.getFeedback_id())
                     .task(t)
                     .values(before.getLabel(), after.getLabel())
                     .save();
@@ -199,8 +199,8 @@ public class TaskService {
         t.setArchived(true);
         tasks.save(t);
         history.entry(ctx.project(), ctx.user(), HistoryType.TASK, "Removed (archived) task \"" + t.getTitle() + "\"")
-                .component(t.getComponent())
-                .feedback(t.getFeedback())
+                .component(t.getComponent_id())
+                .feedback(t.getFeedback_id())
                 .task(t)
                 .save();
     }

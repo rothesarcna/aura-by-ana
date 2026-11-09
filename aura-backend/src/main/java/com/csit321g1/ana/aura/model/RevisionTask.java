@@ -20,16 +20,16 @@ public class RevisionTask {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "project_id", nullable = false)
-    private Project project;
+    private Project project_id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "component_id", nullable = false)
-    private ProjectComponent component;
+    private ProjectComponent component_id;
 
     /** The feedback this task addresses. Null only for a general task that is not tied to any comment. */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "feedback_id")
-    private Feedback feedback;
+    private Feedback feedback_id;
 
     @Column(nullable = false)
     private String title;
@@ -43,7 +43,7 @@ public class RevisionTask {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assignee_id")
-    private ProjectMember assignee;
+    private ProjectMember assignee_id;
 
     private LocalDate dueDate;
 
@@ -54,7 +54,7 @@ public class RevisionTask {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by_id")
-    private User createdBy;
+    private User created_by_id;
 
     private Instant createdAt;
 

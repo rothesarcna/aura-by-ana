@@ -26,11 +26,11 @@ public class Feedback {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "project_id", nullable = false)
-    private Project project;
+    private Project project_id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "component_id", nullable = false)
-    private ProjectComponent component;
+    private ProjectComponent component_id;
 
     @Enumerated(EnumType.STRING)
     @Column(length = 20, nullable = false)
@@ -53,11 +53,11 @@ public class Feedback {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "previous_feedback_id")
-    private Feedback previousFeedback;
+    private Feedback previous_feedback_id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "recorded_by_id")
-    private User recordedBy;
+    private User recorded_by_id;
 
     private Instant createdAt;
 
