@@ -72,7 +72,7 @@ public class TaskService {
         TaskStatus status = req.status() == null ? TaskStatus.TO_DO : req.status();
 
         RevisionTask t = new RevisionTask();
-        t.setProject_id(ctx.project());
+        t.setProject(ctx.project());
         t.setComponent_id(component);
         t.setFeedback_id(feedback);
         t.setTitle(Text.clean(req.title()));

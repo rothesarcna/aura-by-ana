@@ -42,7 +42,7 @@ public class ComponentService {
         AccessService.ProjectAccess ctx = access.require(projectId, userId);
 
         ProjectComponent c = new ProjectComponent();
-        c.setProject_id(ctx.project());
+        c.setProject(ctx.project());
         c.setName(Text.clean(req.name()));
         c.setDescription(Text.clean(req.description()));
         c.setType(req.type() == null ? ComponentType.OTHER : req.type());

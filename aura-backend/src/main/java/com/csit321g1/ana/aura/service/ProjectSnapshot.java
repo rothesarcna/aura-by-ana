@@ -62,8 +62,8 @@ public class ProjectSnapshot {
         this.components = allComponents.stream().filter(c -> !c.isArchived()).collect(Collectors.toList());
         this.feedback = allFeedback.stream().filter(f -> !f.getComponent_id().isArchived()).collect(Collectors.toList());
         for (Feedback f : allFeedback) {
-            if (f.getPrevious_feedback_id() != null) {
-                supersededBy.put(f.getPrevious_feedback_id().getId(), f);
+            if (f.getPreviousFeedback() != null) {
+                supersededBy.put(f.getPreviousFeedback().getId(), f);
             }
         }
         this.tasks = unarchivedTasks.stream().filter(t -> !t.getComponent_id().isArchived()).collect(Collectors.toList());
@@ -71,7 +71,7 @@ public class ProjectSnapshot {
                 .filter(t -> t.getFeedback_id() != null)
                 .collect(Collectors.groupingBy(t -> t.getFeedback_id().getId()));
         this.repliesByFeedback = allReplies.stream()
-                .collect(Collectors.groupingBy(r -> r.getFeedback_id().getId(),
+                .collect(Collectors.groupingBy(r -> r.getFeedback().getId(),
                         Collectors.mapping(r -> new ReplyResponse(r.getId(), r.getAuthorName(), r.getText(), r.getCreatedAt()),
                                 Collectors.toList())));
     }
@@ -134,8 +134,8 @@ public class ProjectSnapshot {
                 m.getName(),
                 m.getEmail(),
                 m.getRole(),
-                m.getUser_id() == null ? null : m.getUser_id().getId(),
-                m.getUser_id() != null,
+                m.getUser() == null ? null : m.getUser().getId(),
+                m.getUser() != null,
                 m.isActive());
     }
 
@@ -179,7 +179,7 @@ public class ProjectSnapshot {
                 f.getReceivedOn(),
                 f.getStatus(),
                 f.getVersionNumber(),
-                f.getPrevious_feedback_id() == null ? null : f.getPrevious_feedback_id().getId(),
+                f.getPreviousFeedback() == null ? null : f.getPreviousFeedback().getId(),
                 newer == null ? null : newer.getId(),
                 open,
                 linked.size(),

@@ -32,7 +32,7 @@ public class HistoryService {
         private final HistoryEntry entry = new HistoryEntry();
 
         private EntryBuilder(Project project, User actor, HistoryType type, String message) {
-            entry.setProject_id(project);
+            entry.setProject(project);
             entry.setActor_id(actor);
             entry.setActorName(actor == null ? null : actor.getFullName());
             entry.setType(type);

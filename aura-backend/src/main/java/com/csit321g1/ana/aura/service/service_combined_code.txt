@@ -1,0 +1,1846 @@
+﻿package com.csit321g1.ana.aura.service;
+
+import com.csit321g1.ana.aura.exception.BadRequestException;
+import com.csit321g1.ana.aura.exception.NotFoundException;
+import com.csit321g1.ana.aura.exception.UnauthorizedException;
+import com.csit321g1.ana.aura.model.Feedback;
+import com.csit321g1.ana.aura.model.Project;
+import com.csit321g1.ana.aura.model.ProjectComponent;
+import com.csit321g1.ana.aura.model.ProjectMember;
+import com.csit321g1.ana.aura.model.RevisionTask;
+import com.csit321g1.ana.aura.model.User;
+import com.csit321g1.ana.aura.repository.FeedbackRepository;
+import com.csit321g1.ana.aura.repository.ProjectComponentRepository;
+import com.csit321g1.ana.aura.repository.ProjectMemberRepository;
+import com.csit321g1.ana.aura.repository.ProjectRepository; // Fixed import
+import com.csit321g1.ana.aura.repository.RevisionTaskRepository;
+import com.csit321g1.ana.aura.repository.UserRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@Transactional(readOnly = true)
+public class AccessService {
+
+    public record ProjectAccess(User user, Project project, ProjectMember member) {
+    }
+
+    private final UserRepository users;
+    private final ProjectRepository projects; // Fixed from ProjectReportRepository
+    private final ProjectMemberRepository members;
+    private final ProjectComponentRepository components;
+    private final FeedbackRepository feedback;
+    private final RevisionTaskRepository tasks;
+
+    public AccessService(UserRepository users,
+                         ProjectRepository projects, // Fixed injection
+                         ProjectMemberRepository members,
+                         ProjectComponentRepository components,
+                         FeedbackRepository feedback,
+                         RevisionTaskRepository tasks) {
+        this.users = users;
+        this.projects = projects;
+        this.members = members;
+        this.components = components;
+        this.feedback = feedback;
+        this.tasks = tasks;
+    }
+
+    public User requireUser(Long userId) {
+        if (userId == null) {
+            throw new UnauthorizedException("Missing X-User-Id header. Sign in first.");
+        }
+        return users.findById(userId).orElseThrow(() -> new UnauthorizedException("Unknown user. Sign in again."));
+    }
+
+    public ProjectAccess require(Long projectId, Long userId) {
+        User user = requireUser(userId);
+        Project project = projects.findById(projectId)
+                .filter(p -> !p.isArchived())
+                .orElseThrow(() -> new NotFoundException("Project not found."));
+        ProjectMember member = members.findByProjectIdAndUserIdAndActiveTrue(projectId, user.getId())
+                .orElseThrow(() -> new NotFoundException("Project not found."));
+        return new ProjectAccess(user, project, member);
+    }
+
+    public ProjectComponent component(Long projectId, Long componentId) {
+        if (componentId == null) {
+            throw new BadRequestException("componentId is required.");
+        }
+        return components.findByIdAndProjectIdAndArchivedFalse(componentId, projectId)
+                .orElseThrow(() -> new NotFoundException("Component not found in this project."));
+    }
+
+    public Feedback feedback(Long projectId, Long feedbackId) {
+        Feedback f = feedback.findByIdAndProjectId(feedbackId, projectId)
+                .orElseThrow(() -> new NotFoundException("Feedback not found in this project."));
+        if (f.getComponent_id().isArchived()) { // Fixed from getComponent_id() to getComponent()
+            throw new NotFoundException("Feedback not found in this project.");
+        }
+        return f;
+    }
+
+    public RevisionTask task(Long projectId, Long taskId) {
+        return tasks.findByIdAndProjectIdAndArchivedFalse(taskId, projectId)
+                .orElseThrow(() -> new NotFoundException("Task not found in this project."));
+    }
+
+    public ProjectMember assignee(Long projectId, Long memberId) {
+        if (memberId == null) {
+            return null;
+        }
+        return members.findByIdAndProjectId(memberId, projectId)
+                .filter(ProjectMember::isActive)
+                .orElseThrow(() -> new BadRequestException("The assignee must be an active member of this project."));
+    }
+
+    public ProjectMember member(Long projectId, Long memberId) {
+        return members.findByIdAndProjectId(memberId, projectId)
+                .filter(ProjectMember::isActive)
+                .orElseThrow(() -> new NotFoundException("Member not found in this project."));
+    }
+}
+package com.csit321g1.ana.aura.service;
+
+import com.csit321g1.ana.aura.dto.ComponentDtos.ComponentRequest;
+import com.csit321g1.ana.aura.dto.ComponentDtos.ComponentResponse;
+import com.csit321g1.ana.aura.dto.ComponentDtos.StatusChangeRequest;
+import com.csit321g1.ana.aura.model.ComponentType;
+import com.csit321g1.ana.aura.model.HistoryType;
+import com.csit321g1.ana.aura.model.ProjectComponent;
+import com.csit321g1.ana.aura.model.ProjectMember;
+import com.csit321g1.ana.aura.model.WorkStatus;
+import com.csit321g1.ana.aura.repository.ProjectComponentRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Service
+@Transactional
+public class ComponentService {
+
+    private final ProjectComponentRepository components;
+    private final AccessService access;
+    private final SnapshotService snapshots;
+    private final HistoryService history;
+
+    public ComponentService(ProjectComponentRepository components,
+                            AccessService access,
+                            SnapshotService snapshots,
+                            HistoryService history) {
+        this.components = components;
+        this.access = access;
+        this.snapshots = snapshots;
+        this.history = history;
+    }
+
+    // CREATE
+    public ComponentResponse create(Long userId, Long projectId, ComponentRequest req) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+
+        ProjectComponent c = new ProjectComponent();
+        c.setProject(ctx.project());
+        c.setName(Text.clean(req.name()));
+        c.setDescription(Text.clean(req.description()));
+        c.setType(req.type() == null ? ComponentType.OTHER : req.type());
+        c.setDueDate(req.dueDate());
+        c.setOwner_id(access.assignee(projectId, req.ownerId()));
+        c.setStatus(req.status() == null ? WorkStatus.PENDING : req.status());
+        c.setProgress(c.getStatus() == WorkStatus.APPROVED ? 100 : req.progress() == null ? 0 : req.progress());
+        c = components.save(c);
+
+        history.entry(ctx.project(), ctx.user(), HistoryType.COMPONENT,
+                        "Added component \"" + c.getName() + "\" (due " + c.getDueDate() + ")")
+                .component(c)
+                .save();
+        return snapshots.load(ctx.project()).toComponent(c);
+    }
+
+    /** Search and filter. All parameters are optional. Sorted by deadline, soonest first. */
+    @Transactional(readOnly = true)
+    public List<ComponentResponse> list(Long userId, Long projectId, String status, LocalDate dueFrom,
+                                        LocalDate dueTo, Long ownerId, String q) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        WorkStatus wanted = Filters.parseEnum(WorkStatus.class, "status", status);
+        Filters.checkRange(dueFrom, dueTo);
+
+        ProjectSnapshot snap = snapshots.load(ctx.project());
+        return snap.components().stream()
+                .filter(c -> wanted == null || c.getStatus() == wanted)
+                .filter(c -> Filters.inRange(c.getDueDate(), dueFrom, dueTo))
+                .filter(c -> ownerId == null || (c.getOwner_id() != null && ownerId.equals(c.getOwner_id().getId())))
+                .filter(c -> Filters.matches(q, c.getName(), c.getDescription()))
+                .sorted(Comparator.comparing(ProjectComponent::getDueDate, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(ProjectComponent::getId))
+                .map(snap::toComponent)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public ComponentResponse get(Long userId, Long projectId, Long componentId) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        ProjectComponent c = access.component(projectId, componentId);
+        return snapshots.load(ctx.project()).toComponent(c);
+    }
+
+    // UPDATE (details only; use changeStatus for the status)
+    public ComponentResponse update(Long userId, Long projectId, Long componentId, ComponentRequest req) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        ProjectComponent c = access.component(projectId, componentId);
+        ProjectMember newOwner = access.assignee(projectId, req.ownerId());
+        ComponentType newType = req.type() == null ? c.getType() : req.type();
+        int newProgress = c.getStatus() == WorkStatus.APPROVED ? 100 : req.progress() == null ? c.getProgress() : req.progress();
+
+        List<String> changes = new ArrayList<>();
+        Text.diff(changes, "name", c.getName(), Text.clean(req.name()));
+        Text.diff(changes, "type", c.getType().getLabel(), newType.getLabel());
+        Text.diff(changes, "due date", c.getDueDate(), req.dueDate());
+        Text.diff(changes, "progress", c.getProgress() + "%", newProgress + "%");
+        Text.diff(changes, "owner", c.getOwner_id() == null ? null : c.getOwner_id().getName(),
+                newOwner == null ? null : newOwner.getName());
+        Text.diffQuiet(changes, "description", c.getDescription(), Text.clean(req.description()));
+
+        c.setName(Text.clean(req.name()));
+        c.setDescription(Text.clean(req.description()));
+        c.setType(newType);
+        c.setDueDate(req.dueDate());
+        c.setOwner_id(newOwner);
+        c.setProgress(newProgress);
+        components.save(c);
+
+        if (!changes.isEmpty()) {
+            history.entry(ctx.project(), ctx.user(), HistoryType.COMPONENT,
+                            "Updated component \"" + c.getName() + "\" (" + String.join("; ", changes) + ")")
+                    .component(c)
+                    .save();
+        }
+        return snapshots.load(ctx.project()).toComponent(c);
+    }
+
+    /** Moves a component through Pending, Submitted, Under Review, For Revision, Resubmitted, Approved. */
+    public ComponentResponse changeStatus(Long userId, Long projectId, Long componentId, StatusChangeRequest req) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        ProjectComponent c = access.component(projectId, componentId);
+        WorkStatus before = c.getStatus();
+        WorkStatus after = req.status();
+
+        if (before != after) {
+            c.setStatus(after);
+            if (after == WorkStatus.APPROVED) {
+                c.setProgress(100);
+            }
+            components.save(c);
+
+            String note = Text.clean(req.note());
+            history.entry(ctx.project(), ctx.user(), HistoryType.STATUS_CHANGE,
+                            "\"" + c.getName() + "\" changed from " + before.getLabel() + " to " + after.getLabel()
+                                    + (note == null ? "" : ". Note: " + note))
+                    .component(c)
+                    .values(before.getLabel(), after.getLabel())
+                    .save();
+        }
+        return snapshots.load(ctx.project()).toComponent(c);
+    }
+
+    // DELETE: archives the component. Its feedback, tasks and history are kept but leave the working views.
+    public void delete(Long userId, Long projectId, Long componentId) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        ProjectComponent c = access.component(projectId, componentId);
+        c.setArchived(true);
+        components.save(c);
+        history.entry(ctx.project(), ctx.user(), HistoryType.COMPONENT,
+                        "Removed (archived) component \"" + c.getName() + "\"")
+                .component(c)
+                .save();
+    }
+}
+package com.csit321g1.ana.aura.service;
+
+import com.csit321g1.ana.aura.dto.FeedbackDtos.FeedbackDetailResponse;
+import com.csit321g1.ana.aura.dto.FeedbackDtos.FeedbackRequest;
+import com.csit321g1.ana.aura.dto.FeedbackDtos.FeedbackResponse;
+import com.csit321g1.ana.aura.dto.FeedbackDtos.FeedbackStatusRequest;
+import com.csit321g1.ana.aura.dto.FeedbackDtos.ReplyRequest;
+import com.csit321g1.ana.aura.dto.FeedbackDtos.ReplyResponse;
+import com.csit321g1.ana.aura.dto.FeedbackDtos.ReviseRequest;
+import com.csit321g1.ana.aura.dto.FeedbackDtos.VersionSummary;
+import com.csit321g1.ana.aura.dto.TaskDtos.TaskResponse;
+import com.csit321g1.ana.aura.exception.BadRequestException;
+import com.csit321g1.ana.aura.model.Feedback;
+import com.csit321g1.ana.aura.model.FeedbackReply;
+import com.csit321g1.ana.aura.model.FeedbackStatus;
+import com.csit321g1.ana.aura.model.FeedbackType;
+import com.csit321g1.ana.aura.model.HistoryType;
+import com.csit321g1.ana.aura.model.ProjectComponent;
+import com.csit321g1.ana.aura.model.TaskStatus;
+import com.csit321g1.ana.aura.repository.FeedbackReplyRepository;
+import com.csit321g1.ana.aura.repository.FeedbackRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
+@Service
+@Transactional
+public class FeedbackService {
+
+    private final FeedbackRepository feedbackRepo;
+    private final FeedbackReplyRepository replies;
+    private final AccessService access;
+    private final SnapshotService snapshots;
+    private final HistoryService history;
+
+    public FeedbackService(FeedbackRepository feedbackRepo,
+                           FeedbackReplyRepository replies,
+                           AccessService access,
+                           SnapshotService snapshots,
+                           HistoryService history) {
+        this.feedbackRepo = feedbackRepo;
+        this.replies = replies;
+        this.access = access;
+        this.snapshots = snapshots;
+        this.history = history;
+    }
+
+    // CREATE: record feedback (or a clarification question) against one component
+    public FeedbackResponse create(Long userId, Long projectId, FeedbackRequest req) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        ProjectComponent component = access.component(projectId, req.componentId());
+
+        FeedbackType type = req.type() == null ? FeedbackType.FEEDBACK : req.type();
+        String givenBy = Text.clean(req.givenBy());
+        if (givenBy == null) {
+            givenBy = type == FeedbackType.CLARIFICATION ? ctx.user().getFullName() : ctx.project().getAdviser();
+        }
+
+        Feedback f = new Feedback();
+        f.setProject(ctx.project());
+        f.setComponent_id(component);
+        f.setType(type);
+        f.setText(req.text().trim());
+        f.setGivenBy(givenBy);
+        f.setReceivedOn(req.receivedOn() == null ? LocalDate.now() : req.receivedOn());
+        f.setStatus(FeedbackStatus.OPEN);
+        f.setVersionNumber(1);
+        f.setRecorded_by_id(ctx.user());
+        f = feedbackRepo.save(f);
+
+        String label = type == FeedbackType.CLARIFICATION ? "Clarification question" : "Feedback";
+        history.entry(ctx.project(), ctx.user(), HistoryType.FEEDBACK,
+                        label + " recorded on \"" + component.getName() + "\": " + Text.snippet(f.getText(), 120))
+                .component(component)
+                .feedback(f)
+                .save();
+        return snapshots.load(ctx.project()).toFeedback(f);
+    }
+
+    /**
+     * Search and filter. All parameters are optional. Superseded versions are left out unless you
+     * ask for them with includeSuperseded=true or status=Superseded. Newest first.
+     */
+    @Transactional(readOnly = true)
+    public List<FeedbackResponse> list(Long userId, Long projectId, Long componentId, String status, String type,
+                                       LocalDate from, LocalDate to, String q, boolean includeSuperseded) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        FeedbackStatus wantedStatus = Filters.parseEnum(FeedbackStatus.class, "status", status);
+        FeedbackType wantedType = Filters.parseEnum(FeedbackType.class, "type", type);
+        Filters.checkRange(from, to);
+
+        ProjectSnapshot snap = snapshots.load(ctx.project());
+        return snap.feedback().stream()
+                .filter(f -> componentId == null || f.getComponent_id().getId().equals(componentId))
+                .filter(f -> wantedStatus != null
+                        ? f.getStatus() == wantedStatus
+                        : includeSuperseded || f.getStatus() != FeedbackStatus.SUPERSEDED)
+                .filter(f -> wantedType == null || f.getType() == wantedType)
+                .filter(f -> Filters.inRange(f.getReceivedOn(), from, to))
+                .filter(f -> Filters.matches(q, f.getText(), f.getGivenBy()))
+                .sorted(Comparator.comparing(Feedback::getReceivedOn, Comparator.nullsLast(Comparator.<LocalDate>reverseOrder()))
+                        .thenComparing(Feedback::getId, Comparator.reverseOrder()))
+                .map(snap::toFeedback)
+                .collect(Collectors.toList());
+    }
+
+    /** One feedback record with its linked tasks, replies and the full version chain. */
+    @Transactional(readOnly = true)
+    public FeedbackDetailResponse get(Long userId, Long projectId, Long feedbackId) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        Feedback f = access.feedback(projectId, feedbackId);
+        return detail(snapshots.load(ctx.project()), f);
+    }
+
+    /**
+     * The instructor changed their instructions. The old record is kept and marked Superseded, and a
+     * new Open record (version + 1) takes its place. Tasks already linked stay on the old version.
+     */
+    public FeedbackDetailResponse revise(Long userId, Long projectId, Long feedbackId, ReviseRequest req) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        Feedback old = access.feedback(projectId, feedbackId);
+        if (old.getStatus() == FeedbackStatus.SUPERSEDED) {
+            throw new BadRequestException("This feedback was already replaced by a newer version. Revise the latest version.");
+        }
+
+        String givenBy = Text.clean(req.givenBy()) == null ? old.getGivenBy() : Text.clean(req.givenBy());
+
+        Feedback next = new Feedback();
+        next.setProject(old.getProject());
+        next.setComponent_id(old.getComponent_id());
+        next.setType(old.getType());
+        next.setText(req.text().trim());
+        next.setGivenBy(givenBy);
+        next.setReceivedOn(req.receivedOn() == null ? LocalDate.now() : req.receivedOn());
+        next.setStatus(FeedbackStatus.OPEN);
+        next.setVersionNumber(old.getVersionNumber() + 1);
+        next.setPrevious_feedback_id(old);
+        next.setRecorded_by_id(ctx.user());
+        next = feedbackRepo.save(next);
+
+        old.setStatus(FeedbackStatus.SUPERSEDED);
+        feedbackRepo.save(old);
+
+        ProjectSnapshot snap = snapshots.load(ctx.project());
+        long openOnOld = snap.tasksOf(old.getId()).stream().filter(t -> t.getStatus() != TaskStatus.DONE).count();
+        String reason = Text.clean(req.reason());
+        String message = "Instructions changed on \"" + old.getComponent_id().getName() + "\" (version "
+                + old.getVersionNumber() + " \u2192 " + next.getVersionNumber() + ")"
+                + (reason == null ? "" : ": " + reason)
+                + (openOnOld == 0 ? "" : ". " + openOnOld + " unfinished task(s) are still linked to the previous version");
+        history.entry(ctx.project(), ctx.user(), HistoryType.FEEDBACK, message)
+                .component(old.getComponent_id())
+                .feedback(next)
+                .values("v" + old.getVersionNumber(), "v" + next.getVersionNumber())
+                .save();
+
+        return detail(snap, next);
+    }
+
+    /** Mark feedback Resolved or reopen it. Superseded versions cannot be changed. */
+    public FeedbackResponse setStatus(Long userId, Long projectId, Long feedbackId, FeedbackStatusRequest req) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        Feedback f = access.feedback(projectId, feedbackId);
+
+        if (req.status() == FeedbackStatus.SUPERSEDED) {
+            throw new BadRequestException("Superseded is set automatically when you revise feedback.");
+        }
+        if (f.getStatus() == FeedbackStatus.SUPERSEDED) {
+            throw new BadRequestException("This version was replaced by a newer one and can no longer be changed.");
+        }
+
+        FeedbackStatus before = f.getStatus();
+        if (before != req.status()) {
+            f.setStatus(req.status());
+            f.setResolvedAt(req.status() == FeedbackStatus.RESOLVED ? Instant.now() : null);
+            feedbackRepo.save(f);
+            history.entry(ctx.project(), ctx.user(), HistoryType.STATUS_CHANGE,
+                            (req.status() == FeedbackStatus.RESOLVED ? "Resolved" : "Reopened") + " feedback on \""
+                                    + f.getComponent_id().getName() + "\": " + Text.snippet(f.getText(), 100))
+                    .component(f.getComponent_id())
+                    .feedback(f)
+                    .values(before.getLabel(), req.status().getLabel())
+                    .save();
+        }
+        return snapshots.load(ctx.project()).toFeedback(f);
+    }
+
+    /** Adds a note, e.g. the instructor's answer to a clarification question. */
+    public ReplyResponse addReply(Long userId, Long projectId, Long feedbackId, ReplyRequest req) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        Feedback f = access.feedback(projectId, feedbackId);
+
+        FeedbackReply r = new FeedbackReply();
+        r.setFeedback(f);
+        r.setAuthor_id(ctx.user());
+        r.setAuthorName(ctx.user().getFullName());
+        r.setText(req.text().trim());
+        r = replies.save(r);
+
+        String what = f.getType() == FeedbackType.CLARIFICATION ? "clarification" : "feedback";
+        history.entry(ctx.project(), ctx.user(), HistoryType.FEEDBACK,
+                        "Added a note to " + what + " on \"" + f.getComponent_id().getName() + "\": " + Text.snippet(r.getText(), 100))
+                .component(f.getComponent_id())
+                .feedback(f)
+                .save();
+        return toReply(r);
+    }
+
+    // ---- helpers --------------------------------------------------------
+
+    private FeedbackDetailResponse detail(ProjectSnapshot snap, Feedback f) {
+        List<TaskResponse> tasks = snap.tasksOf(f.getId()).stream()
+                .map(snap::toTask)
+                .collect(Collectors.toList());
+        List<ReplyResponse> replyList = replies.findByFeedbackIdOrderByCreatedAtAscIdAsc(f.getId()).stream()
+                .map(this::toReply)
+                .collect(Collectors.toList());
+        return new FeedbackDetailResponse(snap.toFeedback(f), tasks, replyList, versionChain(f));
+    }
+
+    /** Oldest version first. Walks back to the first version, then forward through newer ones. */
+    private List<VersionSummary> versionChain(Feedback current) {
+        Feedback first = current;
+        while (first.getPrevious_feedback_id() != null) {
+            first = first.getPrevious_feedback_id();
+        }
+        List<VersionSummary> chain = new ArrayList<>();
+        Feedback cursor = first;
+        while (cursor != null) {
+            chain.add(new VersionSummary(
+                    cursor.getId(),
+                    cursor.getVersionNumber(),
+                    cursor.getStatus(),
+                    cursor.getText(),
+                    cursor.getGivenBy(),
+                    cursor.getReceivedOn(),
+                    cursor.getCreatedAt()));
+            Optional<Feedback> newer = feedbackRepo.findFirstByPreviousFeedbackId(cursor.getId());
+            cursor = newer.orElse(null);
+        }
+        return Collections.unmodifiableList(chain);
+    }
+
+    private ReplyResponse toReply(FeedbackReply r) {
+        return new ReplyResponse(r.getId(), r.getAuthorName(), r.getText(), r.getCreatedAt());
+    }
+}
+package com.csit321g1.ana.aura.service;
+
+import com.csit321g1.ana.aura.exception.BadRequestException;
+import com.csit321g1.ana.aura.model.EnumLookup;
+import com.csit321g1.ana.aura.model.LabeledEnum;
+
+import java.time.LocalDate;
+import java.util.Locale;
+
+/** Helpers for the optional search/filter query parameters on the list endpoints. */
+final class Filters {
+
+    private Filters() {
+    }
+
+    /** Parses an enum query parameter such as ?status=Under Review; null/blank means "no filter". */
+    static <E extends Enum<E> & LabeledEnum> E parseEnum(Class<E> type, String param, String raw) {
+        try {
+            return EnumLookup.parse(type, raw);
+        } catch (IllegalArgumentException ex) {
+            throw new BadRequestException("Invalid value '" + raw + "' for '" + param + "'.");
+        }
+    }
+
+    static void checkRange(LocalDate from, LocalDate to) {
+        if (from != null && to != null && from.isAfter(to)) {
+            throw new BadRequestException("The 'from' date must not be after the 'to' date.");
+        }
+    }
+
+    static boolean inRange(LocalDate value, LocalDate from, LocalDate to) {
+        if (from == null && to == null) {
+            return true;
+        }
+        if (value == null) {
+            return false;
+        }
+        return (from == null || !value.isBefore(from)) && (to == null || !value.isAfter(to));
+    }
+
+    /** Case-insensitive "contains" over any of the given fields; a blank query matches everything. */
+    static boolean matches(String query, String... fields) {
+        String q = Text.clean(query);
+        if (q == null) {
+            return true;
+        }
+        String needle = q.toLowerCase(Locale.ROOT);
+        for (String f : fields) {
+            if (f != null && f.toLowerCase(Locale.ROOT).contains(needle)) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+package com.csit321g1.ana.aura.service;
+
+import com.csit321g1.ana.aura.dto.HistoryDtos.HistoryResponse;
+import com.csit321g1.ana.aura.dto.HistoryDtos.RevisionRequest;
+import com.csit321g1.ana.aura.exception.BadRequestException;
+import com.csit321g1.ana.aura.model.Feedback;
+import com.csit321g1.ana.aura.model.HistoryEntry;
+import com.csit321g1.ana.aura.model.HistoryType;
+import com.csit321g1.ana.aura.model.Project;
+import com.csit321g1.ana.aura.model.ProjectComponent;
+import com.csit321g1.ana.aura.model.RevisionTask;
+import com.csit321g1.ana.aura.model.User;
+import com.csit321g1.ana.aura.repository.HistoryEntryRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.List;
+import java.util.stream.Collectors;
+
+/**
+ * Writes and reads the project's append-only history. There is deliberately no method here (or
+ * anywhere else) that edits or deletes an entry.
+ */
+@Service
+@Transactional
+public class HistoryService {
+
+    /** Fluent helper so callers only set the links that apply to the entry. */
+    public class EntryBuilder {
+        private final HistoryEntry entry = new HistoryEntry();
+
+        private EntryBuilder(Project project, User actor, HistoryType type, String message) {
+            entry.setProject(project);
+            entry.setActor_id(actor);
+            entry.setActorName(actor == null ? null : actor.getFullName());
+            entry.setType(type);
+            entry.setMessage(message);
+        }
+
+        public EntryBuilder component(ProjectComponent c) {
+            entry.setComponent_id(c);
+            return this;
+        }
+
+        public EntryBuilder feedback(Feedback f) {
+            entry.setFeedback_id(f);
+            return this;
+        }
+
+        public EntryBuilder task(RevisionTask t) {
+            entry.setTask_id(t);
+            return this;
+        }
+
+        public EntryBuilder values(String oldValue, String newValue) {
+            entry.setOldValue(oldValue);
+            entry.setNewValue(newValue);
+            return this;
+        }
+
+        public HistoryEntry save() {
+            return repository.save(entry);
+        }
+    }
+
+    private final HistoryEntryRepository repository;
+    private final AccessService access;
+
+    public HistoryService(HistoryEntryRepository repository, AccessService access) {
+        this.repository = repository;
+        this.access = access;
+    }
+
+    public EntryBuilder entry(Project project, User actor, HistoryType type, String message) {
+        return new EntryBuilder(project, actor, type, message);
+    }
+
+    /** Newest first. All filters are optional. */
+    @Transactional(readOnly = true)
+    public List<HistoryResponse> list(Long userId, Long projectId, String type, Long componentId,
+                                      Long feedbackId, Long taskId, LocalDate from, LocalDate to, String q) {
+        access.require(projectId, userId);
+        HistoryType wantedType = Filters.parseEnum(HistoryType.class, "type", type);
+        Filters.checkRange(from, to);
+        ZoneId zone = ZoneId.systemDefault();
+
+        return repository.findByProjectIdOrderByCreatedAtDescIdDesc(projectId).stream()
+                .filter(e -> wantedType == null || e.getType() == wantedType)
+                .filter(e -> componentId == null
+                        || (e.getComponent_id() != null && componentId.equals(e.getComponent_id().getId())))
+                .filter(e -> feedbackId == null
+                        || (e.getFeedback_id() != null && feedbackId.equals(e.getFeedback_id().getId())))
+                .filter(e -> taskId == null || (e.getTask_id() != null && taskId.equals(e.getTask_id().getId())))
+                .filter(e -> Filters.inRange(
+                        e.getCreatedAt() == null ? null : e.getCreatedAt().atZone(zone).toLocalDate(), from, to))
+                .filter(e -> Filters.matches(q, e.getMessage(), e.getActorName()))
+                .map(this::toResponse)
+                .collect(Collectors.toList());
+    }
+
+    /** Documents a change the group made in response to feedback. */
+    public HistoryResponse recordRevision(Long userId, Long projectId, RevisionRequest req) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        if (req.feedbackId() == null && req.taskId() == null && req.componentId() == null) {
+            throw new BadRequestException("Give a feedbackId, taskId or componentId for the revision.");
+        }
+
+        Feedback feedback = req.feedbackId() == null ? null : access.feedback(projectId, req.feedbackId());
+        RevisionTask task = req.taskId() == null ? null : access.task(projectId, req.taskId());
+        ProjectComponent component = req.componentId() == null ? null : access.component(projectId, req.componentId());
+
+        if (task != null && feedback == null) {
+            feedback = task.getFeedback_id();
+        }
+        if (feedback != null && task != null && task.getFeedback_id() != null
+                && !task.getFeedback_id().getId().equals(feedback.getId())) {
+            throw new BadRequestException("That task belongs to a different feedback record.");
+        }
+        ProjectComponent derived = task != null ? task.getComponent_id() : feedback != null ? feedback.getComponent_id() : null;
+        if (derived != null && component != null && !derived.getId().equals(component.getId())) {
+            throw new BadRequestException("The component does not match the feedback or task.");
+        }
+        if (component == null) {
+            component = derived;
+        }
+
+        String summary = req.summary().trim();
+        String where = component == null ? "" : " on \"" + component.getName() + "\"";
+        HistoryEntry saved = entry(ctx.project(), ctx.user(), HistoryType.REVISION, "Revision" + where + ": " + summary)
+                .component(component)
+                .feedback(feedback)
+                .task(task)
+                .save();
+        return toResponse(saved);
+    }
+
+    private HistoryResponse toResponse(HistoryEntry e) {
+        return new HistoryResponse(
+                e.getId(),
+                e.getType(),
+                e.getMessage(),
+                e.getComponent_id() == null ? null : e.getComponent_id().getId(),
+                e.getComponent_id() == null ? null : e.getComponent_id().getName(),
+                e.getFeedback_id() == null ? null : e.getFeedback_id().getId(),
+                e.getTask_id() == null ? null : e.getTask_id().getId(),
+                e.getOldValue(),
+                e.getNewValue(),
+                e.getActor_id() == null ? null : e.getActor_id().getId(),
+                e.getActorName(),
+                e.getCreatedAt());
+    }
+}
+package com.csit321g1.ana.aura.service;
+
+import com.csit321g1.ana.aura.dto.ProjectDtos.MemberRequest;
+import com.csit321g1.ana.aura.dto.ProjectDtos.MemberResponse;
+import com.csit321g1.ana.aura.exception.BadRequestException;
+import com.csit321g1.ana.aura.model.HistoryType;
+import com.csit321g1.ana.aura.model.ProjectMember;
+import com.csit321g1.ana.aura.model.RevisionTask;
+import com.csit321g1.ana.aura.model.TaskStatus;
+import com.csit321g1.ana.aura.model.User;
+import com.csit321g1.ana.aura.repository.ProjectMemberRepository;
+import com.csit321g1.ana.aura.repository.UserRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+/** Group collaboration: who is in the project's group. */
+@Service
+@Transactional
+public class MemberService {
+
+    private final ProjectMemberRepository members;
+    private final UserRepository users;
+    private final AccessService access;
+    private final SnapshotService snapshots;
+    private final HistoryService history;
+
+    public MemberService(ProjectMemberRepository members,
+                         UserRepository users,
+                         AccessService access,
+                         SnapshotService snapshots,
+                         HistoryService history) {
+        this.members = members;
+        this.users = users;
+        this.access = access;
+        this.snapshots = snapshots;
+        this.history = history;
+    }
+
+    @Transactional(readOnly = true)
+    public List<MemberResponse> list(Long userId, Long projectId) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        ProjectSnapshot snap = snapshots.load(ctx.project());
+        return snap.activeMembers().stream().map(snap::toMember).collect(Collectors.toList());
+    }
+
+    /**
+     * Adds a member. If the email belongs to a registered account the member is linked to it, which
+     * gives that person access to the project. Otherwise the member is just a name tasks can be assigned to.
+     */
+    public MemberResponse add(Long userId, Long projectId, MemberRequest req) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+
+        String email = Text.clean(req.email());
+        String name = Text.clean(req.name());
+        User linked = email == null ? null : users.findByEmailIgnoreCase(email).orElse(null);
+
+        if (linked != null && members.existsByProjectIdAndUserIdAndActiveTrue(projectId, linked.getId())) {
+            throw new BadRequestException(linked.getFullName() + " is already a member of this project.");
+        }
+        if (name == null && linked != null) {
+            name = linked.getFullName();
+        }
+        if (name == null) {
+            throw new BadRequestException("A member needs a name, or the email of a registered account.");
+        }
+
+        ProjectMember m = new ProjectMember();
+        m.setProject(ctx.project());
+        m.setUser(linked);
+        m.setName(name);
+        m.setEmail(linked != null ? linked.getEmail() : email);
+        m.setRole(Text.clean(req.role()) == null ? "Member" : Text.clean(req.role()));
+        m = members.save(m);
+
+        history.entry(ctx.project(), ctx.user(), HistoryType.MEMBER, "Added group member " + name).save();
+        return snapshots.load(ctx.project()).toMember(m);
+    }
+
+    public MemberResponse update(Long userId, Long projectId, Long memberId, MemberRequest req) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        ProjectMember m = access.member(projectId, memberId);
+
+        if (Text.clean(req.name()) != null) {
+            m.setName(Text.clean(req.name()));
+        }
+        if (Text.clean(req.role()) != null) {
+            m.setRole(Text.clean(req.role()));
+        }
+        if (m.getUser() == null && req.email() != null) {
+            m.setEmail(Text.clean(req.email()));
+        }
+        members.save(m);
+
+        history.entry(ctx.project(), ctx.user(), HistoryType.MEMBER, "Updated group member " + m.getName()).save();
+        return snapshots.load(ctx.project()).toMember(m);
+    }
+
+    /** Removes a member from the group. The row is kept (inactive) so old tasks and history still show their name. */
+    public void remove(Long userId, Long projectId, Long memberId) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        ProjectMember m = access.member(projectId, memberId);
+        ProjectSnapshot snap = snapshots.load(ctx.project());
+
+        List<RevisionTask> open = snap.tasks().stream()
+                .filter(t -> t.getAssignee_id() != null && t.getAssignee_id().getId().equals(m.getId()))
+                .filter(t -> t.getStatus() != TaskStatus.DONE)
+                .collect(Collectors.toList());
+        if (!open.isEmpty()) {
+            throw new BadRequestException(m.getName() + " still has " + open.size()
+                    + " unfinished task(s). Reassign them first.");
+        }
+
+        long accountMembers = snap.activeMembers().stream().filter(x -> x.getUser() != null).count();
+        if (m.getUser() != null && accountMembers <= 1) {
+            throw new BadRequestException("The last member with an account cannot be removed.");
+        }
+
+        m.setActive(false);
+        members.save(m);
+        history.entry(ctx.project(), ctx.user(), HistoryType.MEMBER, "Removed group member " + m.getName()).save();
+    }
+}
+package com.csit321g1.ana.aura.service;
+
+import com.csit321g1.ana.aura.model.Notification;
+import com.csit321g1.ana.aura.model.User;
+import com.csit321g1.ana.aura.repository.NotificationRepository;
+import com.csit321g1.ana.aura.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.time.Instant;
+import java.util.List;
+
+@Service
+public class NotificationService {
+
+    @Autowired
+    private NotificationRepository notificationRepository;
+    
+    @Autowired
+    private UserRepository userRepository;
+
+    public Notification createNotification(Long userId, String type, String message) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+                
+        Notification notification = new Notification();
+        notification.setUser(user);
+        notification.setNotification_type(type);
+        notification.setMessage(message);
+        
+        return notificationRepository.save(notification);
+    }
+
+    public List<Notification> getUserNotifications(Long userId) {
+        return notificationRepository.findByUser_IdOrderByCreatedAtDesc(userId);
+    }
+
+    public Notification markAsRead(Long notificationId) {
+        Notification notification = notificationRepository.findById(notificationId)
+                .orElseThrow(() -> new RuntimeException("Notification not found"));
+        
+        // Aligns with the ERD's read_at Instant field
+        if (notification.getRead_at() == null) {
+            notification.setRead_at(Instant.now());
+            // If you still have the isRead boolean in the entity:
+            notification.setRead(true);
+        }
+        
+        return notificationRepository.save(notification);
+    }
+}
+package com.csit321g1.ana.aura.service;
+
+import com.csit321g1.ana.aura.dto.OverviewDtos.DeadlineItem;
+import com.csit321g1.ana.aura.dto.OverviewDtos.OverviewResponse;
+import com.csit321g1.ana.aura.model.Feedback;
+import com.csit321g1.ana.aura.model.FeedbackStatus;
+import com.csit321g1.ana.aura.model.Project;
+import com.csit321g1.ana.aura.model.ProjectComponent;
+import com.csit321g1.ana.aura.model.RevisionTask;
+import com.csit321g1.ana.aura.model.TaskStatus;
+import com.csit321g1.ana.aura.model.WorkStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+/** The project overview: component statuses, outstanding tasks, unresolved feedback and upcoming deadlines. */
+@Service
+@Transactional(readOnly = true)
+public class OverviewService {
+
+    private static final int DEFAULT_DAYS = 14;
+    private static final int MAX_DAYS = 365;
+
+    private final AccessService access;
+    private final SnapshotService snapshots;
+
+    public OverviewService(AccessService access, SnapshotService snapshots) {
+        this.access = access;
+        this.snapshots = snapshots;
+    }
+
+    /** days = how far ahead "upcoming" looks (default 14). Overdue items are always included. */
+    public OverviewResponse get(Long userId, Long projectId, Integer days) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        int horizon = days == null ? DEFAULT_DAYS : Math.max(0, Math.min(days, MAX_DAYS));
+        ProjectSnapshot snap = snapshots.load(ctx.project());
+        Project project = snap.project();
+        LocalDate today = snap.today();
+        LocalDate limit = today.plusDays(horizon);
+
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (WorkStatus s : WorkStatus.values()) {
+            counts.put(s.getLabel(), 0);
+        }
+        for (ProjectComponent c : snap.components()) {
+            counts.merge(c.getStatus().getLabel(), 1, Integer::sum);
+        }
+
+        List<RevisionTask> outstanding = snap.tasks().stream()
+                .filter(t -> t.getStatus() != TaskStatus.DONE)
+                .sorted(Comparator.comparing(RevisionTask::getDueDate, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(RevisionTask::getId))
+                .collect(Collectors.toList());
+
+        List<Feedback> unresolved = snap.feedback().stream()
+                .filter(f -> f.getStatus() == FeedbackStatus.OPEN)
+                .sorted(Comparator.comparing(Feedback::getReceivedOn, Comparator.nullsLast(Comparator.<LocalDate>reverseOrder()))
+                        .thenComparing(Feedback::getId, Comparator.reverseOrder()))
+                .collect(Collectors.toList());
+
+        List<DeadlineItem> deadlines = new ArrayList<>();
+        for (ProjectComponent c : snap.components()) {
+            if (c.getStatus() != WorkStatus.APPROVED && c.getDueDate() != null && !c.getDueDate().isAfter(limit)) {
+                deadlines.add(new DeadlineItem("COMPONENT", c.getId(), c.getName(), c.getName(), c.getDueDate(),
+                        ChronoUnit.DAYS.between(today, c.getDueDate()), snap.isComponentOverdue(c),
+                        c.getStatus().getLabel(), c.getOwner_id() == null ? null : c.getOwner_id().getName()));
+            }
+        }
+        for (RevisionTask t : outstanding) {
+            if (t.getDueDate() != null && !t.getDueDate().isAfter(limit)) {
+                deadlines.add(new DeadlineItem("TASK", t.getId(), t.getTitle(), t.getComponent_id().getName(), t.getDueDate(),
+                        ChronoUnit.DAYS.between(today, t.getDueDate()), snap.isTaskOverdue(t),
+                        t.getStatus().getLabel(), t.getAssignee_id() == null ? null : t.getAssignee_id().getName()));
+            }
+        }
+        deadlines.sort(Comparator.comparing(DeadlineItem::dueDate).thenComparing(DeadlineItem::kind).thenComparing(DeadlineItem::id));
+
+        int overdueComponents = (int) snap.components().stream().filter(snap::isComponentOverdue).count();
+        int overdueTasks = (int) outstanding.stream().filter(snap::isTaskOverdue).count();
+
+        return new OverviewResponse(
+                project.getId(),
+                project.getTitle(),
+                project.getStatus() == null ? WorkStatus.PENDING : project.getStatus(),
+                project.getDeadline(),
+                snap.overallProgress(),
+                snap.components().size(),
+                counts,
+                overdueComponents,
+                overdueTasks,
+                snap.components().stream()
+                        .sorted(Comparator.comparing(ProjectComponent::getDueDate, Comparator.nullsLast(Comparator.naturalOrder()))
+                                .thenComparing(ProjectComponent::getId))
+                        .map(snap::toComponent)
+                        .collect(Collectors.toList()),
+                outstanding.stream().map(snap::toTask).collect(Collectors.toList()),
+                unresolved.stream().map(snap::toFeedback).collect(Collectors.toList()),
+                deadlines);
+    }
+}
+package com.csit321g1.ana.aura.service;
+
+import com.csit321g1.ana.aura.model.Project;
+import com.csit321g1.ana.aura.model.ProjectMember;
+import com.csit321g1.ana.aura.model.ProjectReport;
+import com.csit321g1.ana.aura.repository.ProjectMemberRepository;
+import com.csit321g1.ana.aura.repository.ProjectReportRepository;
+import com.csit321g1.ana.aura.repository.ProjectRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+
+@Service
+public class ProjectReportService {
+
+    @Autowired
+    private ProjectReportRepository reportRepository;
+    
+    @Autowired
+    private ProjectRepository projectRepository;
+    
+    @Autowired
+    private ProjectMemberRepository memberRepository;
+
+    public ProjectReport generateReport(Long projectId, Long generatedById, String reportType, String reportData) {
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new RuntimeException("Project not found"));
+                
+        ProjectMember generator = memberRepository.findById(generatedById)
+                .orElseThrow(() -> new RuntimeException("Project member not found"));
+                
+        ProjectReport report = new ProjectReport();
+        report.setProject(project);
+        report.setGeneratedBy(generator); 
+        report.setReportType(reportType);
+        report.setReportData(reportData);
+        
+        return reportRepository.save(report);
+    }
+
+    public List<ProjectReport> getReportsForProject(Long projectId) {
+        return reportRepository.findByProjectIdOrderByGeneratedAtDesc(projectId);
+    }
+}
+package com.csit321g1.ana.aura.service;
+
+import com.csit321g1.ana.aura.dto.ProjectDtos.ProjectRequest;
+import com.csit321g1.ana.aura.dto.ProjectDtos.ProjectResponse;
+import com.csit321g1.ana.aura.exception.ForbiddenException;
+import com.csit321g1.ana.aura.model.HistoryType;
+import com.csit321g1.ana.aura.model.Project;
+import com.csit321g1.ana.aura.model.ProjectMember;
+import com.csit321g1.ana.aura.model.User;
+import com.csit321g1.ana.aura.model.WorkStatus;
+import com.csit321g1.ana.aura.repository.ProjectMemberRepository;
+import com.csit321g1.ana.aura.repository.ProjectRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+@Service
+@Transactional
+public class ProjectService {
+
+    private final ProjectRepository projects;
+    private final ProjectMemberRepository members;
+    private final AccessService access;
+    private final SnapshotService snapshots;
+    private final HistoryService history;
+
+    public ProjectService(ProjectRepository projects,
+                          ProjectMemberRepository members,
+                          AccessService access,
+                          SnapshotService snapshots,
+                          HistoryService history) {
+        this.projects = projects;
+        this.members = members;
+        this.access = access;
+        this.snapshots = snapshots;
+        this.history = history;
+    }
+
+    // CREATE: the creator becomes the project owner and its first member
+    public ProjectResponse create(Long userId, ProjectRequest req) {
+        User user = access.requireUser(userId);
+
+        Project project = new Project();
+        apply(project, req);
+        project.setStatus(req.status() == null ? WorkStatus.PENDING : req.status());
+        project.setOwner(user);
+        project = projects.save(project);
+
+        addMember(project, user, user.getFullName(), user.getEmail(), "Team Leader");
+
+        if (req.members() != null) {
+            Set<String> seen = new HashSet<>();
+            seen.add(user.getFullName().trim().toLowerCase(Locale.ROOT));
+            for (String raw : req.members()) {
+                String name = Text.clean(raw);
+                if (name != null && seen.add(name.toLowerCase(Locale.ROOT))) {
+                    addMember(project, null, name, null, "Member");
+                }
+            }
+        }
+
+        history.entry(project, user, HistoryType.PROJECT, "Created project \"" + project.getTitle() + "\"").save();
+        return snapshots.load(project).toProject();
+    }
+
+    // READ (all projects the caller belongs to)
+    @Transactional(readOnly = true)
+    public List<ProjectResponse> list(Long userId) {
+        User user = access.requireUser(userId);
+        return members.findByUserIdAndActiveTrueAndProjectArchivedFalse(user.getId()).stream()
+                .map(ProjectMember::getProject)
+                .sorted(Comparator.comparing(Project::getId).reversed())
+                .map(p -> snapshots.load(p).toProject())
+                .collect(Collectors.toList());
+    }
+
+    // READ (single)
+    @Transactional(readOnly = true)
+    public ProjectResponse get(Long userId, Long projectId) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        return snapshots.load(ctx.project()).toProject();
+    }
+
+    // UPDATE
+    public ProjectResponse update(Long userId, Long projectId, ProjectRequest req) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        Project project = ctx.project();
+        WorkStatus oldStatus = project.getStatus() == null ? WorkStatus.PENDING : project.getStatus();
+
+        List<String> changes = new ArrayList<>();
+        Text.diff(changes, "title", project.getTitle(), Text.clean(req.title()));
+        Text.diff(changes, "type", project.getType(), Text.clean(req.type()));
+        Text.diff(changes, "adviser", project.getAdviser(), Text.clean(req.adviser()));
+        Text.diff(changes, "semester", project.getSemester(), Text.clean(req.semester()));
+        Text.diff(changes, "subject/section", project.getSubjectSection(), Text.clean(req.subjectSection()));
+        Text.diff(changes, "deadline", project.getDeadline(), req.deadline());
+        Text.diffQuiet(changes, "description", project.getDescription(), Text.clean(req.description()));
+        Text.diffQuiet(changes, "start date", project.getStartDate(), Text.clean(req.startDate()));
+
+        apply(project, req);
+        if (req.status() != null) {
+            project.setStatus(req.status());
+        }
+        projects.save(project);
+
+        if (!changes.isEmpty()) {
+            history.entry(project, ctx.user(), HistoryType.PROJECT,
+                    "Updated project details (" + String.join("; ", changes) + ")").save();
+        }
+        if (req.status() != null && req.status() != oldStatus) {
+            history.entry(project, ctx.user(), HistoryType.STATUS_CHANGE,
+                            "Project status changed from " + oldStatus.getLabel() + " to " + req.status().getLabel())
+                    .values(oldStatus.getLabel(), req.status().getLabel())
+                    .save();
+        }
+        return snapshots.load(project).toProject();
+    }
+
+    // DELETE: archives the project. Components, feedback, tasks and history are kept.
+    public void delete(Long userId, Long projectId) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        Project project = ctx.project();
+        if (project.getOwner() == null || !project.getOwner().getId().equals(ctx.user().getId())) {
+            throw new ForbiddenException("Only the project owner can delete the project.");
+        }
+        project.setArchived(true);
+        projects.save(project);
+        history.entry(project, ctx.user(), HistoryType.PROJECT, "Deleted (archived) project \"" + project.getTitle() + "\"").save();
+    }
+
+    private void apply(Project project, ProjectRequest req) {
+        project.setTitle(Text.clean(req.title()));
+        project.setType(Text.clean(req.type()));
+        project.setAdviser(Text.clean(req.adviser()));
+        project.setStartDate(Text.clean(req.startDate()));
+        project.setDescription(Text.clean(req.description()));
+        project.setSemester(Text.clean(req.semester()));
+        project.setSubjectSection(Text.clean(req.subjectSection()));
+        project.setDeadline(req.deadline());
+    }
+
+    private void addMember(Project project, User user, String name, String email, String role) {
+        ProjectMember m = new ProjectMember();
+        m.setProject(project);
+        m.setUser(user);
+        m.setName(name);
+        m.setEmail(email);
+        m.setRole(role);
+        members.save(m);
+    }
+}
+package com.csit321g1.ana.aura.service;
+
+import com.csit321g1.ana.aura.dto.ComponentDtos.ComponentResponse;
+import com.csit321g1.ana.aura.dto.FeedbackDtos.FeedbackResponse;
+import com.csit321g1.ana.aura.dto.FeedbackDtos.ReplyResponse;
+import com.csit321g1.ana.aura.dto.ProjectDtos.MemberResponse;
+import com.csit321g1.ana.aura.dto.ProjectDtos.ProjectResponse;
+import com.csit321g1.ana.aura.dto.TaskDtos.TaskResponse;
+import com.csit321g1.ana.aura.model.Feedback;
+import com.csit321g1.ana.aura.model.FeedbackReply;
+import com.csit321g1.ana.aura.model.FeedbackStatus;
+import com.csit321g1.ana.aura.model.Project;
+import com.csit321g1.ana.aura.model.ProjectComponent;
+import com.csit321g1.ana.aura.model.ProjectMember;
+import com.csit321g1.ana.aura.model.RevisionTask;
+import com.csit321g1.ana.aura.model.TaskStatus;
+import com.csit321g1.ana.aura.model.WorkStatus;
+
+import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+/**
+ * Everything about one project loaded once, plus the code that turns entities into response
+ * objects. Project data is small (a student group's components, feedback and tasks), so loading
+ * it whole keeps the services simple and avoids per-row queries.
+ *
+ * Must be used inside the transaction that loaded it (entities use lazy associations).
+ *
+ * "Visible" records are the ones in the working views: feedback and tasks of components that
+ * have not been archived, and tasks that have not been archived. Archived and superseded records
+ * are never deleted; they are simply not part of the working views.
+ */
+public class ProjectSnapshot {
+
+    private final Project project;
+    private final LocalDate today;
+    private final List<ProjectMember> members;
+    private final Map<Long, ProjectMember> memberById = new HashMap<>();
+    private final Map<Long, ProjectComponent> componentById = new HashMap<>();
+    private final List<ProjectComponent> components;
+    private final List<Feedback> feedback;
+    private final Map<Long, Feedback> supersededBy = new HashMap<>();
+    private final List<RevisionTask> tasks;
+    private final Map<Long, List<RevisionTask>> tasksByFeedback;
+    private final Map<Long, List<ReplyResponse>> repliesByFeedback;
+
+    ProjectSnapshot(Project project,
+                    LocalDate today,
+                    List<ProjectMember> allMembers,
+                    List<ProjectComponent> allComponents,
+                    List<Feedback> allFeedback,
+                    List<FeedbackReply> allReplies,
+                    List<RevisionTask> unarchivedTasks) {
+        this.project = project;
+        this.today = today;
+        this.members = allMembers;
+        allMembers.forEach(m -> memberById.put(m.getId(), m));
+        allComponents.forEach(c -> componentById.put(c.getId(), c));
+        this.components = allComponents.stream().filter(c -> !c.isArchived()).collect(Collectors.toList());
+        this.feedback = allFeedback.stream().filter(f -> !f.getComponent_id().isArchived()).collect(Collectors.toList());
+        for (Feedback f : allFeedback) {
+            if (f.getPrevious_feedback_id() != null) {
+                supersededBy.put(f.getPrevious_feedback_id().getId(), f);
+            }
+        }
+        this.tasks = unarchivedTasks.stream().filter(t -> !t.getComponent_id().isArchived()).collect(Collectors.toList());
+        this.tasksByFeedback = this.tasks.stream()
+                .filter(t -> t.getFeedback_id() != null)
+                .collect(Collectors.groupingBy(t -> t.getFeedback_id().getId()));
+        this.repliesByFeedback = allReplies.stream()
+                .collect(Collectors.groupingBy(r -> r.getFeedback().getId(),
+                        Collectors.mapping(r -> new ReplyResponse(r.getId(), r.getAuthorName(), r.getText(), r.getCreatedAt()),
+                                Collectors.toList())));
+    }
+
+    public Project project() {
+        return project;
+    }
+
+    public LocalDate today() {
+        return today;
+    }
+
+    public List<ProjectMember> activeMembers() {
+        return members.stream().filter(ProjectMember::isActive).collect(Collectors.toList());
+    }
+
+    public List<ProjectComponent> components() {
+        return components;
+    }
+
+    public List<Feedback> feedback() {
+        return feedback;
+    }
+
+    public List<RevisionTask> tasks() {
+        return tasks;
+    }
+
+    public List<RevisionTask> tasksOf(Long feedbackId) {
+        return tasksByFeedback.getOrDefault(feedbackId, List.of());
+    }
+
+    // ---- derived values -------------------------------------------------
+
+    public int overallProgress() {
+        if (components.isEmpty()) {
+            return 0;
+        }
+        return (int) Math.round(components.stream().mapToInt(ProjectComponent::getProgress).average().orElse(0));
+    }
+
+    public boolean isComponentOverdue(ProjectComponent c) {
+        return c.getDueDate() != null && c.getDueDate().isBefore(today) && c.getStatus() != WorkStatus.APPROVED;
+    }
+
+    public boolean isTaskOverdue(RevisionTask t) {
+        return t.getDueDate() != null && t.getDueDate().isBefore(today) && t.getStatus() != TaskStatus.DONE;
+    }
+
+    public String componentName(Long componentId) {
+        ProjectComponent c = componentById.get(componentId);
+        return c == null ? null : c.getName();
+    }
+
+    // ---- entity -> response ---------------------------------------------
+
+    public MemberResponse toMember(ProjectMember m) {
+        return new MemberResponse(
+                m.getId(),
+                m.getName(),
+                m.getEmail(),
+                m.getRole(),
+                m.getUser() == null ? null : m.getUser().getId(),
+                m.getUser() != null,
+                m.isActive());
+    }
+
+    public ComponentResponse toComponent(ProjectComponent c) {
+        int openFeedback = (int) feedback.stream()
+                .filter(f -> f.getComponent_id().getId().equals(c.getId()) && f.getStatus() == FeedbackStatus.OPEN)
+                .count();
+        int openTasks = (int) tasks.stream()
+                .filter(t -> t.getComponent_id().getId().equals(c.getId()) && t.getStatus() != TaskStatus.DONE)
+                .count();
+        return new ComponentResponse(
+                c.getId(),
+                project.getId(),
+                c.getName(),
+                c.getDescription(),
+                c.getType(),
+                c.getStatus(),
+                c.getDueDate(),
+                c.getProgress(),
+                c.getOwner_id() == null ? null : c.getOwner_id().getId(),
+                c.getOwner_id() == null ? null : c.getOwner_id().getName(),
+                isComponentOverdue(c),
+                openFeedback,
+                openTasks,
+                c.getCreatedAt(),
+                c.getUpdatedAt());
+    }
+
+    public FeedbackResponse toFeedback(Feedback f) {
+        List<RevisionTask> linked = tasksOf(f.getId());
+        int open = (int) linked.stream().filter(t -> t.getStatus() != TaskStatus.DONE).count();
+        Feedback newer = supersededBy.get(f.getId());
+        return new FeedbackResponse(
+                f.getId(),
+                project.getId(),
+                f.getComponent_id().getId(),
+                f.getComponent_id().getName(),
+                f.getType(),
+                f.getText(),
+                f.getGivenBy(),
+                f.getReceivedOn(),
+                f.getStatus(),
+                f.getVersionNumber(),
+                f.getPrevious_feedback_id() == null ? null : f.getPrevious_feedback_id().getId(),
+                newer == null ? null : newer.getId(),
+                open,
+                linked.size(),
+                f.getRecorded_by_id() == null ? null : f.getRecorded_by_id().getFullName(),
+                f.getCreatedAt(),
+                f.getResolvedAt(),
+                repliesByFeedback.getOrDefault(f.getId(), List.of()));
+    }
+
+    public TaskResponse toTask(RevisionTask t) {
+        return new TaskResponse(
+                t.getId(),
+                project.getId(),
+                t.getComponent_id().getId(),
+                t.getComponent_id().getName(),
+                t.getFeedback_id() == null ? null : t.getFeedback_id().getId(),
+                t.getFeedback_id() == null ? null : Text.snippet(t.getFeedback_id().getText(), 120),
+                t.getTitle(),
+                t.getDescription(),
+                t.getStatus(),
+                t.getAssignee_id() == null ? null : t.getAssignee_id().getId(),
+                t.getAssignee_id() == null ? null : t.getAssignee_id().getName(),
+                t.getDueDate(),
+                isTaskOverdue(t),
+                t.getCompletedAt(),
+                t.getCreatedAt(),
+                t.getUpdatedAt());
+    }
+
+    public ProjectResponse toProject() {
+        int openTasks = (int) tasks.stream().filter(t -> t.getStatus() != TaskStatus.DONE).count();
+        int unresolved = (int) feedback.stream().filter(f -> f.getStatus() == FeedbackStatus.OPEN).count();
+        return new ProjectResponse(
+                project.getId(),
+                project.getTitle(),
+                project.getType(),
+                project.getAdviser(),
+                project.getAdviser(),
+                project.getStartDate(),
+                project.getDescription(),
+                project.getSemester(),
+                project.getSubjectSection(),
+                project.getDeadline(),
+                project.getStatus() == null ? WorkStatus.PENDING : project.getStatus(),
+                overallProgress(),
+                components.size(),
+                openTasks,
+                unresolved,
+                project.getOwner() == null ? null : project.getOwner().getId(),
+                activeMembers().stream().map(this::toMember).collect(Collectors.toList()),
+                project.getCreatedAt(),
+                project.getUpdatedAt());
+    }
+}
+package com.csit321g1.ana.aura.service;
+
+import com.csit321g1.ana.aura.model.Project;
+import com.csit321g1.ana.aura.repository.FeedbackReplyRepository;
+import com.csit321g1.ana.aura.repository.FeedbackRepository;
+import com.csit321g1.ana.aura.repository.ProjectComponentRepository;
+import com.csit321g1.ana.aura.repository.ProjectMemberRepository;
+import com.csit321g1.ana.aura.repository.RevisionTaskRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDate;
+
+@Service
+@Transactional(readOnly = true)
+public class SnapshotService {
+
+    private final ProjectMemberRepository members;
+    private final ProjectComponentRepository components;
+    private final FeedbackRepository feedback;
+    private final FeedbackReplyRepository replies;
+    private final RevisionTaskRepository tasks;
+
+    public SnapshotService(ProjectMemberRepository members,
+                           ProjectComponentRepository components,
+                           FeedbackRepository feedback,
+                           FeedbackReplyRepository replies,
+                           RevisionTaskRepository tasks) {
+        this.members = members;
+        this.components = components;
+        this.feedback = feedback;
+        this.replies = replies;
+        this.tasks = tasks;
+    }
+
+    /** Call from inside a transaction; the snapshot reads lazy associations when it maps. */
+    public ProjectSnapshot load(Project project) {
+        Long id = project.getId();
+        return new ProjectSnapshot(
+                project,
+                LocalDate.now(),
+                members.findByProjectIdOrderByIdAsc(id),
+                components.findByProjectId(id),
+                feedback.findByProjectId(id),
+                replies.findByFeedbackProjectIdOrderByCreatedAtAscIdAsc(id),
+                tasks.findByProjectIdAndArchivedFalse(id));
+    }
+}
+package com.csit321g1.ana.aura.service;
+
+import com.csit321g1.ana.aura.model.ProjectComponent;
+import com.csit321g1.ana.aura.model.Submission;
+import com.csit321g1.ana.aura.model.User;
+import com.csit321g1.ana.aura.repository.ProjectComponentRepository;
+import com.csit321g1.ana.aura.repository.SubmissionRepository;
+import com.csit321g1.ana.aura.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.time.Instant;
+import java.util.List;
+
+@Service
+public class SubmissionService {
+
+    @Autowired
+    private SubmissionRepository submissionRepository;
+    
+    @Autowired
+    private ProjectComponentRepository componentRepository;
+    
+    @Autowired
+    private UserRepository userRepository;
+
+    public Submission addSubmission(Long componentId, Long userId, Submission submission) {
+        ProjectComponent component = componentRepository.findById(componentId)
+                .orElseThrow(() -> new RuntimeException("Component not found"));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        
+        submission.setComponent(component);
+        submission.setSubmitted_by(user);
+        
+        // Auto-increment version number
+        List<Submission> existing = submissionRepository.findByComponent_Id(componentId);
+        submission.setVersion_number(existing.size() + 1);
+        
+        return submissionRepository.save(submission);
+    }
+
+    public List<Submission> getSubmissionsForComponent(Long componentId) {
+        return submissionRepository.findByComponent_Id(componentId);
+    }
+}
+package com.csit321g1.ana.aura.service;
+
+import com.csit321g1.ana.aura.dto.TaskDtos.TaskRequest;
+import com.csit321g1.ana.aura.dto.TaskDtos.TaskResponse;
+import com.csit321g1.ana.aura.dto.TaskDtos.TaskStatusRequest;
+import com.csit321g1.ana.aura.exception.BadRequestException;
+import com.csit321g1.ana.aura.model.Feedback;
+import com.csit321g1.ana.aura.model.FeedbackStatus;
+import com.csit321g1.ana.aura.model.HistoryType;
+import com.csit321g1.ana.aura.model.ProjectComponent;
+import com.csit321g1.ana.aura.model.ProjectMember;
+import com.csit321g1.ana.aura.model.RevisionTask;
+import com.csit321g1.ana.aura.model.TaskStatus;
+import com.csit321g1.ana.aura.repository.RevisionTaskRepository;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.stream.Collectors;
+
+/** Revision tasks: the actions that turn a feedback comment into work somebody owns. */
+@Service
+@Transactional
+public class TaskService {
+
+    private final RevisionTaskRepository tasks;
+    private final AccessService access;
+    private final SnapshotService snapshots;
+    private final HistoryService history;
+
+    public TaskService(RevisionTaskRepository tasks,
+                       AccessService access,
+                       SnapshotService snapshots,
+                       HistoryService history) {
+        this.tasks = tasks;
+        this.access = access;
+        this.snapshots = snapshots;
+        this.history = history;
+    }
+
+    /**
+     * Creates a task. When forcedFeedbackId is given (task created under a feedback record) it wins over
+     * the feedbackId in the body. The task's component always comes from its feedback.
+     */
+    public TaskResponse create(Long userId, Long projectId, TaskRequest req, Long forcedFeedbackId) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+
+        Long feedbackId = forcedFeedbackId != null ? forcedFeedbackId : req.feedbackId();
+        Feedback feedback = feedbackId == null ? null : access.feedback(projectId, feedbackId);
+        if (feedback != null && feedback.getStatus() == FeedbackStatus.SUPERSEDED) {
+            throw new BadRequestException("That feedback was replaced by a newer version. Link the task to the latest version.");
+        }
+
+        ProjectComponent component;
+        if (feedback != null) {
+            component = feedback.getComponent_id();
+            if (req.componentId() != null && !req.componentId().equals(component.getId())) {
+                throw new BadRequestException("The component does not match the feedback's component.");
+            }
+        } else {
+            if (req.componentId() == null) {
+                throw new BadRequestException("Give a feedbackId, or a componentId for a general task.");
+            }
+            component = access.component(projectId, req.componentId());
+        }
+
+        ProjectMember assignee = access.assignee(projectId, req.assigneeId());
+        TaskStatus status = req.status() == null ? TaskStatus.TO_DO : req.status();
+
+        RevisionTask t = new RevisionTask();
+        t.setProject(ctx.project());
+        t.setComponent_id(component);
+        t.setFeedback_id(feedback);
+        t.setTitle(Text.clean(req.title()));
+        t.setDescription(Text.clean(req.description()));
+        t.setAssignee_id(assignee);
+        t.setDueDate(req.dueDate());
+        t.setStatus(status);
+        t.setCompletedAt(status == TaskStatus.DONE ? Instant.now() : null);
+        t.setCreated_by_id(ctx.user());
+        t = tasks.save(t);
+
+        history.entry(ctx.project(), ctx.user(), HistoryType.TASK,
+                        "Created task \"" + t.getTitle() + "\" on \"" + component.getName() + "\""
+                                + (assignee == null ? "" : ", assigned to " + assignee.getName())
+                                + (t.getDueDate() == null ? "" : ", due " + t.getDueDate()))
+                .component(component)
+                .feedback(feedback)
+                .task(t)
+                .save();
+        return snapshots.load(ctx.project()).toTask(t);
+    }
+
+    /**
+     * Search and filter. All parameters are optional. mine=true limits the list to the caller's own
+     * tasks; overdue=true keeps only unfinished tasks past their due date. Sorted by due date, soonest first.
+     */
+    @Transactional(readOnly = true)
+    public List<TaskResponse> list(Long userId, Long projectId, String status, Long assigneeId, boolean mine,
+                                   Long componentId, Long feedbackId, LocalDate dueFrom, LocalDate dueTo,
+                                   boolean overdue, String q) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        TaskStatus wanted = Filters.parseEnum(TaskStatus.class, "status", status);
+        Filters.checkRange(dueFrom, dueTo);
+        Long wantedAssignee = mine ? ctx.member().getId() : assigneeId;
+
+        ProjectSnapshot snap = snapshots.load(ctx.project());
+        return snap.tasks().stream()
+                .filter(t -> wanted == null || t.getStatus() == wanted)
+                .filter(t -> wantedAssignee == null
+                        || (t.getAssignee_id() != null && wantedAssignee.equals(t.getAssignee_id().getId())))
+                .filter(t -> componentId == null || t.getComponent_id().getId().equals(componentId))
+                .filter(t -> feedbackId == null
+                        || (t.getFeedback_id() != null && feedbackId.equals(t.getFeedback_id().getId())))
+                .filter(t -> Filters.inRange(t.getDueDate(), dueFrom, dueTo))
+                .filter(t -> !overdue || snap.isTaskOverdue(t))
+                .filter(t -> Filters.matches(q, t.getTitle(), t.getDescription()))
+                .sorted(Comparator.comparing(RevisionTask::getDueDate, Comparator.nullsLast(Comparator.naturalOrder()))
+                        .thenComparing(RevisionTask::getId))
+                .map(snap::toTask)
+                .collect(Collectors.toList());
+    }
+
+    /** The tasks linked to one feedback record. */
+    @Transactional(readOnly = true)
+    public List<TaskResponse> listForFeedback(Long userId, Long projectId, Long feedbackId) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        Feedback f = access.feedback(projectId, feedbackId);
+        ProjectSnapshot snap = snapshots.load(ctx.project());
+        return snap.tasksOf(f.getId()).stream().map(snap::toTask).collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public TaskResponse get(Long userId, Long projectId, Long taskId) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        RevisionTask t = access.task(projectId, taskId);
+        return snapshots.load(ctx.project()).toTask(t);
+    }
+
+    // UPDATE: title, description, assignee, due date. The links to feedback and component never change.
+    public TaskResponse update(Long userId, Long projectId, Long taskId, TaskRequest req) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        RevisionTask t = access.task(projectId, taskId);
+        ProjectMember newAssignee = access.assignee(projectId, req.assigneeId());
+
+        List<String> changes = new ArrayList<>();
+        Text.diff(changes, "title", t.getTitle(), Text.clean(req.title()));
+        Text.diff(changes, "assignee", t.getAssignee_id() == null ? null : t.getAssignee_id().getName(),
+                newAssignee == null ? null : newAssignee.getName());
+        Text.diff(changes, "due date", t.getDueDate(), req.dueDate());
+        Text.diffQuiet(changes, "description", t.getDescription(), Text.clean(req.description()));
+
+        t.setTitle(Text.clean(req.title()));
+        t.setDescription(Text.clean(req.description()));
+        t.setAssignee_id(newAssignee);
+        t.setDueDate(req.dueDate());
+        tasks.save(t);
+
+        if (!changes.isEmpty()) {
+            history.entry(ctx.project(), ctx.user(), HistoryType.TASK,
+                            "Updated task \"" + t.getTitle() + "\" (" + String.join("; ", changes) + ")")
+                    .component(t.getComponent_id())
+                    .feedback(t.getFeedback_id())
+                    .task(t)
+                    .save();
+        }
+        return snapshots.load(ctx.project()).toTask(t);
+    }
+
+    public TaskResponse setStatus(Long userId, Long projectId, Long taskId, TaskStatusRequest req) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        RevisionTask t = access.task(projectId, taskId);
+        TaskStatus before = t.getStatus();
+        TaskStatus after = req.status();
+
+        if (before != after) {
+            t.setStatus(after);
+            t.setCompletedAt(after == TaskStatus.DONE ? Instant.now() : null);
+            tasks.save(t);
+            history.entry(ctx.project(), ctx.user(), HistoryType.STATUS_CHANGE,
+                            "Task \"" + t.getTitle() + "\" changed from " + before.getLabel() + " to " + after.getLabel())
+                    .component(t.getComponent_id())
+                    .feedback(t.getFeedback_id())
+                    .task(t)
+                    .values(before.getLabel(), after.getLabel())
+                    .save();
+        }
+        return snapshots.load(ctx.project()).toTask(t);
+    }
+
+    // DELETE: archives the task. Its history entries stay.
+    public void delete(Long userId, Long projectId, Long taskId) {
+        AccessService.ProjectAccess ctx = access.require(projectId, userId);
+        RevisionTask t = access.task(projectId, taskId);
+        t.setArchived(true);
+        tasks.save(t);
+        history.entry(ctx.project(), ctx.user(), HistoryType.TASK, "Removed (archived) task \"" + t.getTitle() + "\"")
+                .component(t.getComponent_id())
+                .feedback(t.getFeedback_id())
+                .task(t)
+                .save();
+    }
+}
+package com.csit321g1.ana.aura.service;
+
+import java.util.List;
+import java.util.Objects;
+
+/** Small string helpers shared by the services. */
+final class Text {
+
+    private Text() {
+    }
+
+    /** Trims; returns null for null or blank input. */
+    static String clean(String s) {
+        if (s == null) {
+            return null;
+        }
+        String t = s.trim();
+        return t.isEmpty() ? null : t;
+    }
+
+    /** Shortens long text for use in history messages and summaries. */
+    static String snippet(String s, int max) {
+        if (s == null) {
+            return "";
+        }
+        String t = s.trim().replaceAll("\\s+", " ");
+        return t.length() <= max ? t : t.substring(0, Math.max(0, max - 1)).trim() + "\u2026";
+    }
+
+    private static String show(Object o) {
+        return o == null ? "none" : String.valueOf(o);
+    }
+
+    /** Adds "label: before -> after" to out when the two values differ. */
+    static void diff(List<String> out, String label, Object before, Object after) {
+        if (!Objects.equals(before, after)) {
+            out.add(label + ": " + show(before) + " \u2192 " + show(after));
+        }
+    }
+
+    /** Adds just the label when the two values differ (for long text such as descriptions). */
+    static void diffQuiet(List<String> out, String label, Object before, Object after) {
+        if (!Objects.equals(before, after)) {
+            out.add(label);
+        }
+    }
+}
+package com.csit321g1.ana.aura.service;
+
+import com.csit321g1.ana.aura.model.User;
+import com.csit321g1.ana.aura.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+@Service
+public class UserService {
+
+    @Autowired
+    private UserRepository userRepository;
+
+    public User registerStudent(User user) {
+        if (userRepository.existsByEmailIgnoreCase(user.getEmail())) {
+            throw new RuntimeException("An account with this email already exists.");
+        }
+        if (userRepository.existsByStudentIdIgnoreCase(user.getStudentId())) {
+            throw new RuntimeException("This Student ID is already registered.");
+        }
+        
+        user.setRole("student");
+        return userRepository.save(user);
+    }
+
+    public User loginStudent(String identifier, String password) {
+        String id = identifier.trim().toLowerCase();
+        
+        User user = userRepository.findByEmailIgnoreCaseOrStudentIdIgnoreCase(id, id)
+                .orElseThrow(() -> new RuntimeException("Invalid email/Student ID or password."));
+                
+        if (!user.getPassword().equals(password)) {
+            throw new RuntimeException("Invalid email/Student ID or password.");
+        }
+        
+        return user;
+    }
+
+    public void changePassword(Long userId, String currentPassword, String newPassword) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found."));
+                
+        if (!user.getPassword().equals(currentPassword)) {
+            throw new RuntimeException("Current password is incorrect.");
+        }
+        
+        user.setPassword(newPassword);
+        userRepository.save(user);
+    }
+}

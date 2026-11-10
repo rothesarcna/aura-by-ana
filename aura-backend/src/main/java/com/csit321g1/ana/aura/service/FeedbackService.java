@@ -65,7 +65,7 @@ public class FeedbackService {
         }
 
         Feedback f = new Feedback();
-        f.setProject_id(ctx.project());
+        f.setProject(ctx.project());
         f.setComponent_id(component);
         f.setType(type);
         f.setText(req.text().trim());
@@ -134,7 +134,7 @@ public class FeedbackService {
         String givenBy = Text.clean(req.givenBy()) == null ? old.getGivenBy() : Text.clean(req.givenBy());
 
         Feedback next = new Feedback();
-        next.setProject_id(old.getProject_id());
+        next.setProject(old.getProject());
         next.setComponent_id(old.getComponent_id());
         next.setType(old.getType());
         next.setText(req.text().trim());
@@ -142,7 +142,7 @@ public class FeedbackService {
         next.setReceivedOn(req.receivedOn() == null ? LocalDate.now() : req.receivedOn());
         next.setStatus(FeedbackStatus.OPEN);
         next.setVersionNumber(old.getVersionNumber() + 1);
-        next.setPrevious_feedback_id(old);
+        next.setPreviousFeedback(old);
         next.setRecorded_by_id(ctx.user());
         next = feedbackRepo.save(next);
 
@@ -199,7 +199,7 @@ public class FeedbackService {
         Feedback f = access.feedback(projectId, feedbackId);
 
         FeedbackReply r = new FeedbackReply();
-        r.setFeedback_id(f);
+        r.setFeedback(f);
         r.setAuthor_id(ctx.user());
         r.setAuthorName(ctx.user().getFullName());
         r.setText(req.text().trim());
@@ -229,8 +229,8 @@ public class FeedbackService {
     /** Oldest version first. Walks back to the first version, then forward through newer ones. */
     private List<VersionSummary> versionChain(Feedback current) {
         Feedback first = current;
-        while (first.getPrevious_feedback_id() != null) {
-            first = first.getPrevious_feedback_id();
+        while (first.getPreviousFeedback() != null) {
+            first = first.getPreviousFeedback();
         }
         List<VersionSummary> chain = new ArrayList<>();
         Feedback cursor = first;

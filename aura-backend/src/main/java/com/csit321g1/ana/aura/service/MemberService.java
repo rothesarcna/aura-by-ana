@@ -68,8 +68,8 @@ public class MemberService {
         }
 
         ProjectMember m = new ProjectMember();
-        m.setProject_id(ctx.project());
-        m.setUser_id(linked);
+        m.setProject(ctx.project());
+        m.setUser(linked);
         m.setName(name);
         m.setEmail(linked != null ? linked.getEmail() : email);
         m.setRole(Text.clean(req.role()) == null ? "Member" : Text.clean(req.role()));
@@ -89,7 +89,7 @@ public class MemberService {
         if (Text.clean(req.role()) != null) {
             m.setRole(Text.clean(req.role()));
         }
-        if (m.getUser_id() == null && req.email() != null) {
+        if (m.getUser() == null && req.email() != null) {
             m.setEmail(Text.clean(req.email()));
         }
         members.save(m);
@@ -113,8 +113,8 @@ public class MemberService {
                     + " unfinished task(s). Reassign them first.");
         }
 
-        long accountMembers = snap.activeMembers().stream().filter(x -> x.getUser_id() != null).count();
-        if (m.getUser_id() != null && accountMembers <= 1) {
+        long accountMembers = snap.activeMembers().stream().filter(x -> x.getUser() != null).count();
+        if (m.getUser() != null && accountMembers <= 1) {
             throw new BadRequestException("The last member with an account cannot be removed.");
         }
 

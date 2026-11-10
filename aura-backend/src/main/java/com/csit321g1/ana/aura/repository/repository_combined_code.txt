@@ -1,0 +1,173 @@
+﻿package com.csit321g1.ana.aura.repository;
+
+import com.csit321g1.ana.aura.model.FeedbackReply;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+
+@Repository
+public interface FeedbackReplyRepository extends JpaRepository<FeedbackReply, Long> {
+
+    List<FeedbackReply> findByFeedbackIdOrderByCreatedAtAscIdAsc(Long feedbackId);
+
+    /** Every reply in a project, oldest first (one query instead of one per feedback record). */
+    List<FeedbackReply> findByFeedbackProjectIdOrderByCreatedAtAscIdAsc(Long projectId);
+}
+package com.csit321g1.ana.aura.repository;
+
+import com.csit321g1.ana.aura.model.Feedback;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+public interface FeedbackRepository extends JpaRepository<Feedback, Long> {
+
+    List<Feedback> findByProjectId(Long projectId);
+
+    Optional<Feedback> findByIdAndProjectId(Long id, Long projectId);
+
+    /** The newer version that replaced this feedback, if any. */
+    Optional<Feedback> findFirstByPreviousFeedbackId(Long previousFeedbackId);
+}
+package com.csit321g1.ana.aura.repository;
+
+import com.csit321g1.ana.aura.model.HistoryEntry;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+
+@Repository
+public interface HistoryEntryRepository extends JpaRepository<HistoryEntry, Long> {
+
+    /** Newest first. */
+    List<HistoryEntry> findByProjectIdOrderByCreatedAtDescIdDesc(Long projectId);
+}
+package com.csit321g1.ana.aura.repository;
+
+import com.csit321g1.ana.aura.model.Notification;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+
+@Repository
+public interface NotificationRepository extends JpaRepository<Notification, Long> {
+    // Assuming your Notification entity named the user field 'recipient' or 'user'
+    List<Notification> findByRecipient_IdOrderByCreatedAtDesc(Long userId);
+}
+package com.csit321g1.ana.aura.repository;
+
+import com.csit321g1.ana.aura.model.ProjectComponent;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+public interface ProjectComponentRepository extends JpaRepository<ProjectComponent, Long> {
+
+    /** Includes archived components so old history and feedback can still show their names. */
+    List<ProjectComponent> findByProjectId(Long projectId);
+
+    Optional<ProjectComponent> findByIdAndProjectIdAndArchivedFalse(Long id, Long projectId);
+}
+package com.csit321g1.ana.aura.repository;
+
+import com.csit321g1.ana.aura.model.ProjectMember;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+public interface ProjectMemberRepository extends JpaRepository<ProjectMember, Long> {
+
+    /** All members of a project, including removed ones (needed to resolve names on old records). */
+    List<ProjectMember> findByProjectIdOrderByIdAsc(Long projectId);
+
+    Optional<ProjectMember> findByIdAndProjectId(Long id, Long projectId);
+
+    Optional<ProjectMember> findByProjectIdAndUserIdAndActiveTrue(Long projectId, Long userId);
+
+    boolean existsByProjectIdAndUserIdAndActiveTrue(Long projectId, Long userId);
+
+    /** The projects a user belongs to (and has not been removed from). */
+    List<ProjectMember> findByUserIdAndActiveTrueAndProjectArchivedFalse(Long userId);
+}
+package com.csit321g1.ana.aura.repository;
+
+import com.csit321g1.ana.aura.model.ProjectReport;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+
+@Repository
+public interface ProjectReportRepository extends JpaRepository<ProjectReport, Long> {
+    List<ProjectReport> findByProjectIdOrderByGeneratedAtDesc(Long projectId);
+}
+package com.csit321g1.ana.aura.repository;
+
+import com.csit321g1.ana.aura.model.Project;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public interface ProjectRepository extends JpaRepository<Project, Long> {
+}
+package com.csit321g1.ana.aura.repository;
+
+import com.csit321g1.ana.aura.model.RevisionTask;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+public interface RevisionTaskRepository extends JpaRepository<RevisionTask, Long> {
+
+    List<RevisionTask> findByProjectIdAndArchivedFalse(Long projectId);
+
+    Optional<RevisionTask> findByIdAndProjectIdAndArchivedFalse(Long id, Long projectId);
+}
+package com.csit321g1.ana.aura.repository;
+
+import com.csit321g1.ana.aura.model.Submission;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+
+@Repository
+public interface SubmissionRepository extends JpaRepository<Submission, Long> {
+    List<Submission> findByComponent_Id(Long componentId);
+}
+package com.csit321g1.ana.aura.repository;
+
+import com.csit321g1.ana.aura.model.User;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+
+@Repository
+public interface UserRepository extends JpaRepository<User, Long> {
+    
+    boolean existsByEmailIgnoreCase(String email);
+    
+    boolean existsByStudentIdIgnoreCase(String studentId);
+
+    // Used to link a project member to a registered account by email
+    Optional<User> findByEmailIgnoreCase(String email);
+    
+    // Used for loginStudent where identifier can be email OR studentId
+    Optional<User> findByEmailIgnoreCaseOrStudentIdIgnoreCase(String email, String studentId);
+}

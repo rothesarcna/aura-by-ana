@@ -19,7 +19,7 @@ public class Submission {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "component_id", nullable = false)
-    private ProjectComponent component_id;
+    private ProjectComponent component;
 
     private int version_number = 1;
 

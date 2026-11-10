@@ -19,7 +19,7 @@ public class FeedbackReply {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "feedback_id", nullable = false)
-    private Feedback feedback_id;
+    private Feedback feedback;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "author_id")

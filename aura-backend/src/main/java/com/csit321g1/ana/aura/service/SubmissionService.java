@@ -30,7 +30,7 @@ public class SubmissionService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
         
-        submission.setComponent_id(component);
+        submission.setComponent(component);
         submission.setSubmitted_by(user);
         
         // Auto-increment version number

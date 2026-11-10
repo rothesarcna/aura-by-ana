@@ -1,0 +1,672 @@
+﻿package com.csit321g1.ana.aura.controller;
+
+public final class ApiHeaders {
+
+    /**
+     * Identifies the signed-in user (the "id" returned by /api/auth/login).
+     * NOTE: this is not real authentication; see docs/API.md.
+     */
+    public static final String USER_ID = "X-User-Id";
+
+    private ApiHeaders() {
+    }
+}
+package com.csit321g1.ana.aura.controller;
+
+import com.csit321g1.ana.aura.model.User;
+import com.csit321g1.ana.aura.service.UserService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/auth")
+@CrossOrigin(origins = "http://localhost:5173") // Connects to your Vite React app
+public class AuthController {
+
+    @Autowired
+    private UserService userService;
+
+    @PostMapping("/register")
+    public ResponseEntity<?> register(@RequestBody User user) {
+        try {
+            User savedUser = userService.registerStudent(user);
+            savedUser.setPassword(null); // Do not send password back to frontend
+            return ResponseEntity.ok(savedUser);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<?> login(@RequestBody Map<String, String> loginData) {
+        try {
+            String identifier = loginData.get("identifier");
+            String password = loginData.get("password");
+            
+            User user = userService.loginStudent(identifier, password);
+            user.setPassword(null); // Do not send password back in session
+            return ResponseEntity.ok(user);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PutMapping("/change-password")
+    public ResponseEntity<?> changePassword(@RequestBody Map<String, Object> payload) {
+        try {
+            // Convert safely in case the frontend sends the ID as an integer instead of a string
+            Long userId = Long.valueOf(payload.get("userId").toString());
+            String currentPassword = payload.get("currentPassword").toString();
+            String newPassword = payload.get("newPassword").toString();
+            
+            userService.changePassword(userId, currentPassword, newPassword);
+            return ResponseEntity.ok(Map.of("message", "Password updated successfully"));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+}
+package com.csit321g1.ana.aura.controller;
+
+import com.csit321g1.ana.aura.dto.ComponentDtos.ComponentRequest;
+import com.csit321g1.ana.aura.dto.ComponentDtos.ComponentResponse;
+import com.csit321g1.ana.aura.dto.ComponentDtos.StatusChangeRequest;
+import com.csit321g1.ana.aura.service.ComponentService;
+import jakarta.validation.Valid;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/projects/{projectId}/components")
+public class ComponentController {
+
+    private final ComponentService service;
+
+    public ComponentController(ComponentService service) {
+        this.service = service;
+    }
+
+    @PostMapping
+    public ResponseEntity<ComponentResponse> create(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @Valid @RequestBody ComponentRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.create(userId, projectId, body));
+    }
+
+    // GET /api/projects/{id}/components?status=For Revision&dueFrom=2026-11-01&dueTo=2026-11-30&ownerId=3&q=chapter
+    @GetMapping
+    public ResponseEntity<List<ComponentResponse>> list(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "dueFrom", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dueFrom,
+            @RequestParam(name = "dueTo", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dueTo,
+            @RequestParam(name = "ownerId", required = false) Long ownerId,
+            @RequestParam(name = "q", required = false) String q) {
+        return ResponseEntity.ok(service.list(userId, projectId, status, dueFrom, dueTo, ownerId, q));
+    }
+
+    @GetMapping("/{componentId}")
+    public ResponseEntity<ComponentResponse> get(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @PathVariable("componentId") Long componentId) {
+        return ResponseEntity.ok(service.get(userId, projectId, componentId));
+    }
+
+    @PutMapping("/{componentId}")
+    public ResponseEntity<ComponentResponse> update(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @PathVariable("componentId") Long componentId,
+            @Valid @RequestBody ComponentRequest body) {
+        return ResponseEntity.ok(service.update(userId, projectId, componentId, body));
+    }
+
+    @PatchMapping("/{componentId}/status")
+    public ResponseEntity<ComponentResponse> changeStatus(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @PathVariable("componentId") Long componentId,
+            @Valid @RequestBody StatusChangeRequest body) {
+        return ResponseEntity.ok(service.changeStatus(userId, projectId, componentId, body));
+    }
+
+    @DeleteMapping("/{componentId}")
+    public ResponseEntity<Map<String, String>> delete(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @PathVariable("componentId") Long componentId) {
+        service.delete(userId, projectId, componentId);
+        return ResponseEntity.ok(Map.of("message", "Component deleted successfully"));
+    }
+}
+package com.csit321g1.ana.aura.controller;
+
+import com.csit321g1.ana.aura.dto.FeedbackDtos.FeedbackDetailResponse;
+import com.csit321g1.ana.aura.dto.FeedbackDtos.FeedbackRequest;
+import com.csit321g1.ana.aura.dto.FeedbackDtos.FeedbackResponse;
+import com.csit321g1.ana.aura.dto.FeedbackDtos.FeedbackStatusRequest;
+import com.csit321g1.ana.aura.dto.FeedbackDtos.ReplyRequest;
+import com.csit321g1.ana.aura.dto.FeedbackDtos.ReplyResponse;
+import com.csit321g1.ana.aura.dto.FeedbackDtos.ReviseRequest;
+import com.csit321g1.ana.aura.dto.TaskDtos.TaskRequest;
+import com.csit321g1.ana.aura.dto.TaskDtos.TaskResponse;
+import com.csit321g1.ana.aura.service.FeedbackService;
+import com.csit321g1.ana.aura.service.TaskService;
+import jakarta.validation.Valid;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.time.LocalDate;
+import java.util.List;
+
+/**
+ * Feedback is never edited in place or deleted. To change the instructions use /revise, which keeps the
+ * old record (marked Superseded) and creates a new version.
+ */
+@RestController
+@RequestMapping("/api/projects/{projectId}/feedback")
+public class FeedbackController {
+
+    private final FeedbackService feedbackService;
+    private final TaskService taskService;
+
+    public FeedbackController(FeedbackService feedbackService, TaskService taskService) {
+        this.feedbackService = feedbackService;
+        this.taskService = taskService;
+    }
+
+    @PostMapping
+    public ResponseEntity<FeedbackResponse> create(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @Valid @RequestBody FeedbackRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(feedbackService.create(userId, projectId, body));
+    }
+
+    // GET /api/projects/{id}/feedback?componentId=&status=Open&type=Clarification&from=&to=&q=&includeSuperseded=false
+    @GetMapping
+    public ResponseEntity<List<FeedbackResponse>> list(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @RequestParam(name = "componentId", required = false) Long componentId,
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "type", required = false) String type,
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "q", required = false) String q,
+            @RequestParam(name = "includeSuperseded", required = false, defaultValue = "false") boolean includeSuperseded) {
+        return ResponseEntity.ok(
+                feedbackService.list(userId, projectId, componentId, status, type, from, to, q, includeSuperseded));
+    }
+
+    @GetMapping("/{feedbackId}")
+    public ResponseEntity<FeedbackDetailResponse> get(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @PathVariable("feedbackId") Long feedbackId) {
+        return ResponseEntity.ok(feedbackService.get(userId, projectId, feedbackId));
+    }
+
+    // POST /api/projects/{id}/feedback/{fid}/revise - the instructor changed their instructions
+    @PostMapping("/{feedbackId}/revise")
+    public ResponseEntity<FeedbackDetailResponse> revise(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @PathVariable("feedbackId") Long feedbackId,
+            @Valid @RequestBody ReviseRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(feedbackService.revise(userId, projectId, feedbackId, body));
+    }
+
+    // PATCH /api/projects/{id}/feedback/{fid}/status - Open or Resolved
+    @PatchMapping("/{feedbackId}/status")
+    public ResponseEntity<FeedbackResponse> setStatus(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @PathVariable("feedbackId") Long feedbackId,
+            @Valid @RequestBody FeedbackStatusRequest body) {
+        return ResponseEntity.ok(feedbackService.setStatus(userId, projectId, feedbackId, body));
+    }
+
+    @PostMapping("/{feedbackId}/replies")
+    public ResponseEntity<ReplyResponse> addReply(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @PathVariable("feedbackId") Long feedbackId,
+            @Valid @RequestBody ReplyRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(feedbackService.addReply(userId, projectId, feedbackId, body));
+    }
+
+    // ---- revision tasks linked to this feedback ----
+
+    @GetMapping("/{feedbackId}/tasks")
+    public ResponseEntity<List<TaskResponse>> tasks(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @PathVariable("feedbackId") Long feedbackId) {
+        return ResponseEntity.ok(taskService.listForFeedback(userId, projectId, feedbackId));
+    }
+
+    // POST /api/projects/{id}/feedback/{fid}/tasks - turn this feedback into a linked revision task
+    @PostMapping("/{feedbackId}/tasks")
+    public ResponseEntity<TaskResponse> createTask(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @PathVariable("feedbackId") Long feedbackId,
+            @Valid @RequestBody TaskRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(taskService.create(userId, projectId, body, feedbackId));
+    }
+}
+package com.csit321g1.ana.aura.controller;
+
+import com.csit321g1.ana.aura.dto.HistoryDtos.HistoryResponse;
+import com.csit321g1.ana.aura.dto.HistoryDtos.RevisionRequest;
+import com.csit321g1.ana.aura.service.HistoryService;
+import jakarta.validation.Valid;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.time.LocalDate;
+import java.util.List;
+
+/** The history is append-only: there is no update or delete endpoint on purpose. */
+@RestController
+@RequestMapping("/api/projects/{projectId}")
+public class HistoryController {
+
+    private final HistoryService service;
+
+    public HistoryController(HistoryService service) {
+        this.service = service;
+    }
+
+    // GET /api/projects/{id}/history?type=Revision&componentId=&feedbackId=&taskId=&from=&to=&q=
+    @GetMapping("/history")
+    public ResponseEntity<List<HistoryResponse>> history(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @RequestParam(name = "type", required = false) String type,
+            @RequestParam(name = "componentId", required = false) Long componentId,
+            @RequestParam(name = "feedbackId", required = false) Long feedbackId,
+            @RequestParam(name = "taskId", required = false) Long taskId,
+            @RequestParam(name = "from", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "to", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "q", required = false) String q) {
+        return ResponseEntity.ok(service.list(userId, projectId, type, componentId, feedbackId, taskId, from, to, q));
+    }
+
+    // POST /api/projects/{id}/revisions - document a change made in response to feedback
+    @PostMapping("/revisions")
+    public ResponseEntity<HistoryResponse> recordRevision(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @Valid @RequestBody RevisionRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.recordRevision(userId, projectId, body));
+    }
+}
+package com.csit321g1.ana.aura.controller;
+
+import com.csit321g1.ana.aura.model.Notification;
+import com.csit321g1.ana.aura.service.NotificationService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/users/{userId}/notifications")
+public class NotificationController {
+
+    @Autowired
+    private NotificationService notificationService;
+
+    @GetMapping
+    public ResponseEntity<List<Notification>> getNotifications(@PathVariable Long userId) {
+        return ResponseEntity.ok(notificationService.getUserNotifications(userId));
+    }
+
+    @PatchMapping("/{notificationId}/read")
+    public ResponseEntity<?> markAsRead(@PathVariable Long userId, @PathVariable Long notificationId) {
+        try {
+            return ResponseEntity.ok(notificationService.markAsRead(notificationId));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+}
+package com.csit321g1.ana.aura.controller;
+
+import com.csit321g1.ana.aura.dto.OverviewDtos.OverviewResponse;
+import com.csit321g1.ana.aura.dto.ProjectDtos.MemberRequest;
+import com.csit321g1.ana.aura.dto.ProjectDtos.MemberResponse;
+import com.csit321g1.ana.aura.dto.ProjectDtos.ProjectRequest;
+import com.csit321g1.ana.aura.dto.ProjectDtos.ProjectResponse;
+import com.csit321g1.ana.aura.service.MemberService;
+import com.csit321g1.ana.aura.service.OverviewService;
+import com.csit321g1.ana.aura.service.ProjectService;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/projects")
+public class ProjectController {
+
+    private final ProjectService projectService;
+    private final MemberService memberService;
+    private final OverviewService overviewService;
+
+    public ProjectController(ProjectService projectService, MemberService memberService, OverviewService overviewService) {
+        this.projectService = projectService;
+        this.memberService = memberService;
+        this.overviewService = overviewService;
+    }
+
+    // POST /api/projects - Create a new project (the caller becomes owner and first member)
+    @PostMapping
+    public ResponseEntity<ProjectResponse> create(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @Valid @RequestBody ProjectRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(projectService.create(userId, body));
+    }
+
+    // GET /api/projects - Projects the caller belongs to
+    @GetMapping
+    public ResponseEntity<List<ProjectResponse>> list(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId) {
+        return ResponseEntity.ok(projectService.list(userId));
+    }
+
+    // GET /api/projects/{id}
+    @GetMapping("/{projectId}")
+    public ResponseEntity<ProjectResponse> get(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId) {
+        return ResponseEntity.ok(projectService.get(userId, projectId));
+    }
+
+    // PUT /api/projects/{id}
+    @PutMapping("/{projectId}")
+    public ResponseEntity<ProjectResponse> update(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @Valid @RequestBody ProjectRequest body) {
+        return ResponseEntity.ok(projectService.update(userId, projectId, body));
+    }
+
+    // DELETE /api/projects/{id} - archives the project (owner only); nothing is physically deleted
+    @DeleteMapping("/{projectId}")
+    public ResponseEntity<Map<String, String>> delete(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId) {
+        projectService.delete(userId, projectId);
+        return ResponseEntity.ok(Map.of("message", "Project deleted successfully"));
+    }
+
+    // GET /api/projects/{id}/overview?days=14
+    @GetMapping("/{projectId}/overview")
+    public ResponseEntity<OverviewResponse> overview(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @RequestParam(name = "days", required = false) Integer days) {
+        return ResponseEntity.ok(overviewService.get(userId, projectId, days));
+    }
+
+    // ---- group members ----
+
+    @GetMapping("/{projectId}/members")
+    public ResponseEntity<List<MemberResponse>> members(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId) {
+        return ResponseEntity.ok(memberService.list(userId, projectId));
+    }
+
+    @PostMapping("/{projectId}/members")
+    public ResponseEntity<MemberResponse> addMember(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @Valid @RequestBody MemberRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(memberService.add(userId, projectId, body));
+    }
+
+    @PutMapping("/{projectId}/members/{memberId}")
+    public ResponseEntity<MemberResponse> updateMember(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @PathVariable("memberId") Long memberId,
+            @Valid @RequestBody MemberRequest body) {
+        return ResponseEntity.ok(memberService.update(userId, projectId, memberId, body));
+    }
+
+    @DeleteMapping("/{projectId}/members/{memberId}")
+    public ResponseEntity<Map<String, String>> removeMember(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @PathVariable("memberId") Long memberId) {
+        memberService.remove(userId, projectId, memberId);
+        return ResponseEntity.ok(Map.of("message", "Member removed"));
+    }
+}
+package com.csit321g1.ana.aura.controller;
+
+import com.csit321g1.ana.aura.model.ProjectReport;
+import com.csit321g1.ana.aura.service.ProjectReportService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/projects/{projectId}/reports")
+public class ProjectReportController {
+
+    @Autowired
+    private ProjectReportService reportService;
+
+    @PostMapping
+    public ResponseEntity<?> createReport(@PathVariable Long projectId, @RequestBody Map<String, Object> payload) {
+        try {
+            Long userId = Long.valueOf(payload.get("generatedById").toString());
+            String type = payload.get("reportType").toString();
+            String data = payload.getOrDefault("reportData", "").toString();
+            
+            return ResponseEntity.ok(reportService.generateReport(projectId, userId, type, data));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping
+    public ResponseEntity<List<ProjectReport>> getProjectReports(@PathVariable Long projectId) {
+        return ResponseEntity.ok(reportService.getReportsForProject(projectId));
+    }
+}
+package com.csit321g1.ana.aura.controller;
+
+import com.csit321g1.ana.aura.model.Submission;
+import com.csit321g1.ana.aura.service.SubmissionService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/components/{componentId}/submissions")
+public class SubmissionController {
+
+    @Autowired
+    private SubmissionService submissionService;
+
+    @PostMapping
+    public ResponseEntity<?> createSubmission(@PathVariable Long componentId, @RequestBody Submission submission) {
+        try {
+            // Assuming the frontend passes submittedBy.id inside the submission object payload
+            Long userId = submission.getSubmitted_by().getId(); 
+            return ResponseEntity.ok(submissionService.addSubmission(componentId, userId, submission));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping
+    public ResponseEntity<List<Submission>> getSubmissions(@PathVariable Long componentId) {
+        return ResponseEntity.ok(submissionService.getSubmissionsForComponent(componentId));
+    }
+}
+package com.csit321g1.ana.aura.controller;
+
+import com.csit321g1.ana.aura.dto.TaskDtos.TaskRequest;
+import com.csit321g1.ana.aura.dto.TaskDtos.TaskResponse;
+import com.csit321g1.ana.aura.dto.TaskDtos.TaskStatusRequest;
+import com.csit321g1.ana.aura.service.TaskService;
+import jakarta.validation.Valid;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/projects/{projectId}/tasks")
+public class TaskController {
+
+    private final TaskService service;
+
+    public TaskController(TaskService service) {
+        this.service = service;
+    }
+
+    // POST /api/projects/{id}/tasks - body may carry feedbackId (linked task) or componentId (general task)
+    @PostMapping
+    public ResponseEntity<TaskResponse> create(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @Valid @RequestBody TaskRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.create(userId, projectId, body, null));
+    }
+
+    // GET /api/projects/{id}/tasks?status=To Do&assigneeId=2&mine=true&componentId=&feedbackId=&dueFrom=&dueTo=&overdue=true&q=
+    @GetMapping
+    public ResponseEntity<List<TaskResponse>> list(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "assigneeId", required = false) Long assigneeId,
+            @RequestParam(name = "mine", required = false, defaultValue = "false") boolean mine,
+            @RequestParam(name = "componentId", required = false) Long componentId,
+            @RequestParam(name = "feedbackId", required = false) Long feedbackId,
+            @RequestParam(name = "dueFrom", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dueFrom,
+            @RequestParam(name = "dueTo", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dueTo,
+            @RequestParam(name = "overdue", required = false, defaultValue = "false") boolean overdue,
+            @RequestParam(name = "q", required = false) String q) {
+        return ResponseEntity.ok(service.list(userId, projectId, status, assigneeId, mine, componentId, feedbackId,
+                dueFrom, dueTo, overdue, q));
+    }
+
+    @GetMapping("/{taskId}")
+    public ResponseEntity<TaskResponse> get(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @PathVariable("taskId") Long taskId) {
+        return ResponseEntity.ok(service.get(userId, projectId, taskId));
+    }
+
+    @PutMapping("/{taskId}")
+    public ResponseEntity<TaskResponse> update(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @PathVariable("taskId") Long taskId,
+            @Valid @RequestBody TaskRequest body) {
+        return ResponseEntity.ok(service.update(userId, projectId, taskId, body));
+    }
+
+    @PatchMapping("/{taskId}/status")
+    public ResponseEntity<TaskResponse> setStatus(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @PathVariable("taskId") Long taskId,
+            @Valid @RequestBody TaskStatusRequest body) {
+        return ResponseEntity.ok(service.setStatus(userId, projectId, taskId, body));
+    }
+
+    @DeleteMapping("/{taskId}")
+    public ResponseEntity<Map<String, String>> delete(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable("projectId") Long projectId,
+            @PathVariable("taskId") Long taskId) {
+        service.delete(userId, projectId, taskId);
+        return ResponseEntity.ok(Map.of("message", "Task deleted successfully"));
+    }
+}

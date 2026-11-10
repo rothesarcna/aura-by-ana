@@ -24,7 +24,7 @@ public class NotificationService {
                 .orElseThrow(() -> new RuntimeException("User not found"));
                 
         Notification notification = new Notification();
-        notification.setUser_id(user);
+        notification.setUser(user);
         notification.setNotification_type(type);
         notification.setMessage(message);
         
@@ -32,7 +32,7 @@ public class NotificationService {
     }
 
     public List<Notification> getUserNotifications(Long userId) {
-        return notificationRepository.findByRecipient_IdOrderByCreatedAtDesc(userId);
+        return notificationRepository.findByUser_IdOrderByCreatedAtDesc(userId);
     }
 
     public Notification markAsRead(Long notificationId) {

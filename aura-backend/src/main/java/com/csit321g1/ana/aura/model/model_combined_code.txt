@@ -1,0 +1,792 @@
+﻿package com.csit321g1.ana.aura.model;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+
+public enum ComponentType implements LabeledEnum {
+    CHAPTER("Chapter"),
+    PROPOSAL("Proposal"),
+    DOCUMENTATION("Documentation"),
+    PROTOTYPE("Prototype"),
+    PRESENTATION("Presentation"),
+    OTHER("Other");
+
+    private final String label;
+
+    ComponentType(String label) {
+        this.label = label;
+    }
+
+    @Override
+    @JsonValue
+    public String getLabel() {
+        return label;
+    }
+
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+    public static ComponentType from(String value) {
+        return EnumLookup.parse(ComponentType.class, value);
+    }
+}
+package com.csit321g1.ana.aura.model;
+
+import java.util.Locale;
+
+/**
+ * Lenient enum parsing so the API accepts "Under Review", "UNDER_REVIEW", "under-review"
+ * and "underreview" for the same value.
+ */
+public final class EnumLookup {
+
+    private EnumLookup() {
+    }
+
+    private static String normalize(String s) {
+        return s == null ? "" : s.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+    }
+
+    /** Returns null for null/blank input; throws IllegalArgumentException for an unknown value. */
+    public static <E extends Enum<E> & LabeledEnum> E parse(Class<E> type, String input) {
+        if (input == null || input.isBlank()) {
+            return null;
+        }
+        String wanted = normalize(input);
+        for (E candidate : type.getEnumConstants()) {
+            if (normalize(candidate.name()).equals(wanted) || normalize(candidate.getLabel()).equals(wanted)) {
+                return candidate;
+            }
+        }
+        throw new IllegalArgumentException("Unknown " + type.getSimpleName() + ": " + input);
+    }
+}
+package com.csit321g1.ana.aura.model;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.Instant;
+import java.time.LocalDate;
+
+/**
+ * One piece of instructor feedback (or a student's clarification question) about a component.
+ *
+ * The text of a feedback record is never edited in place. When the instructor changes their
+ * instructions, a new record is created whose previousFeedback points at the old one and the old
+ * one becomes SUPERSEDED, so every earlier version stays on file.
+ */
+@Getter
+@Setter
+@Entity
+@Table(name = "feedback_items")
+public class Feedback {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "project_id", nullable = false)
+    private Project project;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "component_id", nullable = false)
+    private ProjectComponent component_id;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20, nullable = false)
+    private FeedbackType type = FeedbackType.FEEDBACK;
+
+    @Column(name = "feedback_text", columnDefinition = "TEXT", nullable = false)
+    private String text;
+
+    /** Who gave the feedback (usually the adviser). */
+    private String givenBy;
+
+    /** The date the feedback was received; the student can set it when recording older feedback. */
+    private LocalDate receivedOn;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20, nullable = false)
+    private FeedbackStatus status = FeedbackStatus.OPEN;
+
+    private int versionNumber = 1;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "previous_feedback_id")
+    private Feedback previous_feedback_id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "recorded_by_id")
+    private User recorded_by_id;
+
+    private Instant createdAt;
+
+    private Instant resolvedAt;
+
+    @PrePersist
+    void onCreate() {
+        createdAt = Instant.now();
+    }
+}
+package com.csit321g1.ana.aura.model;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.Instant;
+
+/** A note added to a feedback record, e.g. the instructor's answer to a clarification question. */
+@Getter
+@Setter
+@Entity
+@Table(name = "feedback_replies")
+public class FeedbackReply {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "feedback_id", nullable = false)
+    private Feedback feedback_id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "author_id")
+    private User author_id;
+
+    @Column(nullable = false)
+    private String authorName;
+
+    @Column(name = "reply_text", columnDefinition = "TEXT", nullable = false)
+    private String text;
+
+    private Instant createdAt;
+
+    @PrePersist
+    void onCreate() {
+        createdAt = Instant.now();
+    }
+}
+package com.csit321g1.ana.aura.model;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+
+public enum FeedbackStatus implements LabeledEnum {
+    OPEN("Open"),
+    RESOLVED("Resolved"),
+    SUPERSEDED("Superseded");
+
+    private final String label;
+
+    FeedbackStatus(String label) {
+        this.label = label;
+    }
+
+    @Override
+    @JsonValue
+    public String getLabel() {
+        return label;
+    }
+
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+    public static FeedbackStatus from(String value) {
+        return EnumLookup.parse(FeedbackStatus.class, value);
+    }
+}
+package com.csit321g1.ana.aura.model;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+
+public enum FeedbackType implements LabeledEnum {
+    FEEDBACK("Feedback"),
+    CLARIFICATION("Clarification");
+
+    private final String label;
+
+    FeedbackType(String label) {
+        this.label = label;
+    }
+
+    @Override
+    @JsonValue
+    public String getLabel() {
+        return label;
+    }
+
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+    public static FeedbackType from(String value) {
+        return EnumLookup.parse(FeedbackType.class, value);
+    }
+}
+package com.csit321g1.ana.aura.model;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.Instant;
+
+/**
+ * Append-only audit trail of everything that happens in a project: feedback received, revisions
+ * documented, status changes, task changes. Every column is updatable=false and the services expose
+ * no update or delete, so earlier records are never altered or removed.
+ */
+@Getter
+@Setter
+@Entity
+@Table(name = "history_entries")
+public class HistoryEntry {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "project_id", nullable = false, updatable = false)
+    private Project project;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "component_id", updatable = false)
+    private ProjectComponent component_id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "feedback_id", updatable = false)
+    private Feedback feedback_id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "task_id", updatable = false)
+    private RevisionTask task_id;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20, nullable = false, updatable = false)
+    private HistoryType type;
+
+    @Column(columnDefinition = "TEXT", nullable = false, updatable = false)
+    private String message;
+
+    /** For status changes: the value before and after (e.g. "Pending" -> "Submitted"). */
+    @Column(updatable = false)
+    private String oldValue;
+
+    @Column(updatable = false)
+    private String newValue;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "actor_id", updatable = false)
+    private User actor_id;
+
+    @Column(updatable = false)
+    private String actorName;
+
+    @Column(updatable = false)
+    private Instant createdAt;
+
+    @PrePersist
+    void onCreate() {
+        createdAt = Instant.now();
+    }
+}
+package com.csit321g1.ana.aura.model;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+
+public enum HistoryType implements LabeledEnum {
+    PROJECT("Project"),
+    COMPONENT("Component"),
+    STATUS_CHANGE("Status Change"),
+    FEEDBACK("Feedback"),
+    TASK("Task"),
+    REVISION("Revision"),
+    MEMBER("Member");
+
+    private final String label;
+
+    HistoryType(String label) {
+        this.label = label;
+    }
+
+    @Override
+    @JsonValue
+    public String getLabel() {
+        return label;
+    }
+
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+    public static HistoryType from(String value) {
+        return EnumLookup.parse(HistoryType.class, value);
+    }
+}
+package com.csit321g1.ana.aura.model;
+
+/** Enums that are shown to the frontend with a human-readable label (e.g. "Under Review"). */
+public interface LabeledEnum {
+    String getLabel();
+}
+package com.csit321g1.ana.aura.model;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.Instant;
+
+/** System alerts for a specific user. */
+@Getter
+@Setter
+@Entity
+@Table(name = "notifications")
+public class Notification {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user_id;
+
+    @Column(nullable = false)
+    private String notification_type; // e.g., "TASK_ASSIGNED", "NEW_FEEDBACK"
+
+    @Column(columnDefinition = "TEXT", nullable = false)
+    private String message;
+
+    private boolean isRead = false;
+
+    private Instant created_at;
+    
+    private Instant read_at;
+
+    @PrePersist
+    void onCreate() {
+        created_at = Instant.now();
+    }
+}
+package com.csit321g1.ana.aura.model;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.Instant;
+import java.time.LocalDate;
+
+@Getter
+@Setter
+@Entity
+@Table(name = "projects")
+public class Project {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false)
+    private String title;
+
+    private String type; // e.g., "Capstone Project"
+
+    private String adviser;
+
+    private String startDate;
+
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
+    private String semester;
+
+    private String subjectSection;
+
+    private LocalDate deadline;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private WorkStatus status = WorkStatus.PENDING;
+
+    /** Projects are archived instead of deleted so their feedback and history are never lost. */
+    private boolean archived;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "owner_id")
+    private User owner;
+
+    private Instant createdAt;
+
+    private Instant updatedAt;
+
+    @PrePersist
+    void onCreate() {
+        createdAt = Instant.now();
+        updatedAt = createdAt;
+    }
+
+    @PreUpdate
+    void onUpdate() {
+        updatedAt = Instant.now();
+    }
+}
+package com.csit321g1.ana.aura.model;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.Instant;
+import java.time.LocalDate;
+
+/** A deliverable inside a project: a research chapter, proposal, documentation, prototype, ... */
+@Getter
+@Setter
+@Entity
+@Table(name = "project_components")
+public class ProjectComponent {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "project_id", nullable = false)
+    private Project project;
+
+    @Column(nullable = false)
+    private String name;
+
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20, nullable = false)
+    private ComponentType type = ComponentType.OTHER;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20, nullable = false)
+    private WorkStatus status = WorkStatus.PENDING;
+
+    private LocalDate dueDate;
+
+    private int progress;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "owner_id")
+    private ProjectMember owner_id;
+
+    private boolean archived;
+
+    private Instant createdAt;
+
+    private Instant updatedAt;
+
+    @PrePersist
+    void onCreate() {
+        createdAt = Instant.now();
+        updatedAt = createdAt;
+    }
+
+    @PreUpdate
+    void onUpdate() {
+        updatedAt = Instant.now();
+    }
+}
+package com.csit321g1.ana.aura.model;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.Instant;
+
+/**
+ * A member of a project's group. A member linked to a registered user can sign in and access the
+ * project; a member without a user is just a name that tasks can be assigned to.
+ */
+@Getter
+@Setter
+@Entity
+@Table(name = "project_members")
+public class ProjectMember {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "project_id", nullable = false)
+    private Project project;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    private User user_id;
+
+    @Column(nullable = false)
+    private String name;
+
+    private String email;
+
+    private String role = "Member";
+
+    /** false once the member has been removed; the row stays so old tasks and history still resolve. */
+    private boolean active = true;
+
+    private Instant createdAt;
+
+    @PrePersist
+    void onCreate() {
+        createdAt = Instant.now();
+    }
+}
+package com.csit321g1.ana.aura.model;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.Instant;
+
+/** A generated snapshot or summary report of a project's status. */
+@Getter
+@Setter
+@Entity
+@Table(name = "project_reports")
+public class ProjectReport {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "project_id", nullable = false)
+    private Project project;
+
+    @Column(nullable = false)
+    private String reportType; // e.g., "WEEKLY_SUMMARY", "FINAL_PORTFOLIO"
+
+    @Column(columnDefinition = "TEXT")
+    private String reportData; 
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "generated_by_id")
+    private ProjectMember generatedBy;
+
+    private Instant generatedAt;
+
+    @PrePersist
+    void onCreate() {
+        generatedAt = Instant.now();
+    }
+}
+package com.csit321g1.ana.aura.model;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.Instant;
+import java.time.LocalDate;
+
+/** An action a group member must do to address a piece of feedback. */
+@Getter
+@Setter
+@Entity
+@Table(name = "revision_tasks")
+public class RevisionTask {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "project_id", nullable = false)
+    private Project project;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "component_id", nullable = false)
+    private ProjectComponent component_id;
+
+    /** The feedback this task addresses. Null only for a general task that is not tied to any comment. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "feedback_id")
+    private Feedback feedback_id;
+
+    @Column(nullable = false)
+    private String title;
+
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20, nullable = false)
+    private TaskStatus status = TaskStatus.TO_DO;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "assignee_id")
+    private ProjectMember assignee_id;
+
+    private LocalDate dueDate;
+
+    private Instant completedAt;
+
+    /** Tasks are archived instead of deleted; their history entries stay. */
+    private boolean archived;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "created_by_id")
+    private User created_by_id;
+
+    private Instant createdAt;
+
+    private Instant updatedAt;
+
+    @PrePersist
+    void onCreate() {
+        createdAt = Instant.now();
+        updatedAt = createdAt;
+    }
+
+    @PreUpdate
+    void onUpdate() {
+        updatedAt = Instant.now();
+    }
+}
+package com.csit321g1.ana.aura.model;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.Instant;
+
+/** A student's uploaded work for a specific component. */
+@Getter
+@Setter
+@Entity
+@Table(name = "submissions")
+public class Submission {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "component_id", nullable = false)
+    private ProjectComponent component_id;
+
+    private int version_number = 1;
+
+    /** Google Drive link, GitHub repository, or filename. */
+    @Column(nullable = false)
+    private String submission_reference;
+
+    @Column(columnDefinition = "TEXT")
+    private String submission_notes;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private WorkStatus status = WorkStatus.PENDING;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "submitted_by_id")
+    private User submitted_by;
+
+    private Instant submitted_at;
+
+    @PrePersist
+    void onCreate() {
+        submitted_at = Instant.now();
+    }
+}
+package com.csit321g1.ana.aura.model;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+
+public enum TaskStatus implements LabeledEnum {
+    TO_DO("To Do"),
+    IN_PROGRESS("In Progress"),
+    NEEDS_CLARIFICATION("Needs Clarification"),
+    DONE("Done");
+
+    private final String label;
+
+    TaskStatus(String label) {
+        this.label = label;
+    }
+
+    @Override
+    @JsonValue
+    public String getLabel() {
+        return label;
+    }
+
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+    public static TaskStatus from(String value) {
+        return EnumLookup.parse(TaskStatus.class, value);
+    }
+}
+package com.csit321g1.ana.aura.model;
+
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
+@Entity
+@Table(name = "users")
+public class User {
+    
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    
+    private String role = "student";
+    
+    @Column(nullable = false)
+    private String fullName;
+    
+    @Column(nullable = false, unique = true)
+    private String studentId;
+    
+    @Column(nullable = false, unique = true)
+    private String email;
+    
+    private String course;
+    
+    @Column(nullable = false)
+    private String password; // Note: In production, this must be hashed using BCrypt
+}
+package com.csit321g1.ana.aura.model;
+
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+
+public enum WorkStatus implements LabeledEnum {
+    PENDING("Pending"),
+    SUBMITTED("Submitted"),
+    UNDER_REVIEW("Under Review"),
+    FOR_REVISION("For Revision"),
+    RESUBMITTED("Resubmitted"),
+    APPROVED("Approved");
+
+    private final String label;
+
+    WorkStatus(String label) {
+        this.label = label;
+    }
+
+    @Override
+    @JsonValue
+    public String getLabel() {
+        return label;
+    }
+
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+    public static WorkStatus from(String value) {
+        return EnumLookup.parse(WorkStatus.class, value);
+    }
+}
