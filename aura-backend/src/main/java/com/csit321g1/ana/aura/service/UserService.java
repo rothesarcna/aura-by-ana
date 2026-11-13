@@ -47,4 +47,11 @@ public class UserService {
         user.setPassword(newPassword);
         userRepository.save(user);
     }
+
+    public User getUserById(Long userId) {
+    User user = userRepository.findById(userId)
+            .orElseThrow(() -> new RuntimeException("User not found."));
+    user.setPassword(null); // Never expose password in response
+    return user;
+}
 }

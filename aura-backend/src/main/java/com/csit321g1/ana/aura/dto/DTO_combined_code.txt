@@ -1,0 +1,344 @@
+﻿package com.csit321g1.ana.aura.dto;
+
+import com.csit321g1.ana.aura.model.ComponentType;
+import com.csit321g1.ana.aura.model.WorkStatus;
+import com.fasterxml.jackson.annotation.JsonAlias;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
+import java.time.Instant;
+import java.time.LocalDate;
+
+public final class ComponentDtos {
+
+    private ComponentDtos() {
+    }
+
+    /** Every component needs a deadline. "status" is only used on create; change it later with PATCH .../status. */
+    public record ComponentRequest(
+            @NotBlank @Size(max = 200) String name,
+            @Size(max = 5000) String description,
+            ComponentType type,
+            @NotNull @JsonAlias("due") LocalDate dueDate,
+            @Min(0) @Max(100) Integer progress,
+            Long ownerId,
+            WorkStatus status) {
+    }
+
+    public record StatusChangeRequest(
+            @NotNull WorkStatus status,
+            @Size(max = 1000) String note) {
+    }
+
+    public record ComponentResponse(
+            Long id,
+            Long projectId,
+            String name,
+            String description,
+            ComponentType type,
+            WorkStatus status,
+            LocalDate dueDate,
+            int progress,
+            Long ownerId,
+            String ownerName,
+            boolean overdue,
+            int openFeedbackCount,
+            int openTaskCount,
+            Instant createdAt,
+            Instant updatedAt) {
+    }
+}
+package com.csit321g1.ana.aura.dto;
+
+import com.csit321g1.ana.aura.model.FeedbackStatus;
+import com.csit321g1.ana.aura.model.FeedbackType;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
+
+public final class FeedbackDtos {
+
+    private FeedbackDtos() {
+    }
+
+    public record FeedbackRequest(
+            @NotNull Long componentId,
+            FeedbackType type,
+            @NotBlank @Size(max = 5000) String text,
+            @Size(max = 150) String givenBy,
+            LocalDate receivedOn) {
+    }
+
+    /** The instructor changed their instructions: records a new version and keeps the old one. */
+    public record ReviseRequest(
+            @NotBlank @Size(max = 5000) String text,
+            @Size(max = 150) String givenBy,
+            LocalDate receivedOn,
+            @Size(max = 1000) String reason) {
+    }
+
+    /** Only OPEN and RESOLVED can be set by hand; SUPERSEDED is set by revising. */
+    public record FeedbackStatusRequest(@NotNull FeedbackStatus status) {
+    }
+
+    public record ReplyRequest(@NotBlank @Size(max = 5000) String text) {
+    }
+
+    public record FeedbackResponse(
+            Long id,
+            Long projectId,
+            Long componentId,
+            String componentName,
+            FeedbackType type,
+            String text,
+            String givenBy,
+            LocalDate receivedOn,
+            FeedbackStatus status,
+            int version,
+            Long previousFeedbackId,
+            Long supersededById,
+            int openTaskCount,
+            int totalTaskCount,
+            String recordedBy,
+            Instant createdAt,
+            Instant resolvedAt,
+            List<ReplyResponse> replies) {
+    }
+
+    public record ReplyResponse(Long id, String author, String text, Instant createdAt) {
+    }
+
+    /** One entry in a feedback record's version chain. */
+    public record VersionSummary(
+            Long id,
+            int version,
+            FeedbackStatus status,
+            String text,
+            String givenBy,
+            LocalDate receivedOn,
+            Instant createdAt) {
+    }
+
+    public record FeedbackDetailResponse(
+            FeedbackResponse feedback,
+            List<TaskDtos.TaskResponse> tasks,
+            List<ReplyResponse> replies,
+            List<VersionSummary> versions) {
+    }
+}
+package com.csit321g1.ana.aura.dto;
+
+import com.csit321g1.ana.aura.model.HistoryType;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+import java.time.Instant;
+
+public final class HistoryDtos {
+
+    private HistoryDtos() {
+    }
+
+    /**
+     * Documents a change the group made in response to feedback. Give at least one of
+     * feedbackId, taskId or componentId; the others are filled in from it when possible.
+     */
+    public record RevisionRequest(
+            Long feedbackId,
+            Long taskId,
+            Long componentId,
+            @NotBlank @Size(max = 5000) String summary) {
+    }
+
+    public record HistoryResponse(
+            Long id,
+            HistoryType type,
+            String message,
+            Long componentId,
+            String componentName,
+            Long feedbackId,
+            Long taskId,
+            String oldValue,
+            String newValue,
+            Long actorId,
+            String actorName,
+            Instant createdAt) {
+    }
+}
+package com.csit321g1.ana.aura.dto;
+
+import com.csit321g1.ana.aura.dto.ComponentDtos.ComponentResponse;
+import com.csit321g1.ana.aura.dto.FeedbackDtos.FeedbackResponse;
+import com.csit321g1.ana.aura.dto.TaskDtos.TaskResponse;
+import com.csit321g1.ana.aura.model.WorkStatus;
+
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
+
+public final class OverviewDtos {
+
+    private OverviewDtos() {
+    }
+
+    /** A component or task that is due soon (or already overdue). */
+    public record DeadlineItem(
+            String kind,
+            Long id,
+            String title,
+            String componentName,
+            LocalDate dueDate,
+            long daysRemaining,
+            boolean overdue,
+            String status,
+            String assigneeName) {
+    }
+
+    public record OverviewResponse(
+            Long projectId,
+            String title,
+            WorkStatus status,
+            LocalDate deadline,
+            int overallProgress,
+            int totalComponents,
+            Map<String, Integer> componentStatusCounts,
+            int overdueComponentCount,
+            int overdueTaskCount,
+            List<ComponentResponse> components,
+            List<TaskResponse> outstandingTasks,
+            List<FeedbackResponse> unresolvedFeedback,
+            List<DeadlineItem> upcomingDeadlines) {
+    }
+}
+package com.csit321g1.ana.aura.dto;
+
+import com.csit321g1.ana.aura.model.WorkStatus;
+import com.fasterxml.jackson.annotation.JsonAlias;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
+
+public final class ProjectDtos {
+
+    private ProjectDtos() {
+    }
+
+    /**
+     * Create/update body. "adviser" also accepts "professor" (the name the frontend uses).
+     * "members" is only read when creating: extra group members by name. Use the members
+     * endpoints afterwards to add, edit or remove them.
+     */
+    public record ProjectRequest(
+            @NotBlank @Size(max = 200) String title,
+            @Size(max = 100) String type,
+            @JsonAlias("professor") @Size(max = 150) String adviser,
+            @Size(max = 50) String startDate,
+            @Size(max = 5000) String description,
+            @Size(max = 100) String semester,
+            @Size(max = 100) String subjectSection,
+            LocalDate deadline,
+            WorkStatus status,
+            List<@Size(max = 150) String> members) {
+    }
+
+    public record MemberRequest(
+            @Size(max = 150) String name,
+            @Size(max = 200) String email,
+            @Size(max = 100) String role) {
+    }
+
+    public record MemberResponse(
+            Long id,
+            String name,
+            String email,
+            String role,
+            Long userId,
+            boolean registered,
+            boolean active) {
+    }
+
+    public record ProjectResponse(
+            Long id,
+            String title,
+            String type,
+            String adviser,
+            String professor,
+            String startDate,
+            String description,
+            String semester,
+            String subjectSection,
+            LocalDate deadline,
+            WorkStatus status,
+            int progress,
+            int componentCount,
+            int openTaskCount,
+            int unresolvedFeedbackCount,
+            Long ownerId,
+            List<MemberResponse> members,
+            Instant createdAt,
+            Instant updatedAt) {
+    }
+}
+package com.csit321g1.ana.aura.dto;
+
+import com.csit321g1.ana.aura.model.TaskStatus;
+import com.fasterxml.jackson.annotation.JsonAlias;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
+import java.time.Instant;
+import java.time.LocalDate;
+
+public final class TaskDtos {
+
+    private TaskDtos() {
+    }
+
+    /**
+     * Create/update body. Link a task to feedback with feedbackId (or create it under
+     * POST .../feedback/{id}/tasks). A task without feedback must name its component.
+     * feedbackId, componentId and status are only read on create; update ignores them.
+     */
+    public record TaskRequest(
+            @NotBlank @Size(max = 200) String title,
+            @Size(max = 5000) String description,
+            Long feedbackId,
+            Long componentId,
+            Long assigneeId,
+            @JsonAlias("due") LocalDate dueDate,
+            TaskStatus status) {
+    }
+
+    public record TaskStatusRequest(@NotNull TaskStatus status) {
+    }
+
+    public record TaskResponse(
+            Long id,
+            Long projectId,
+            Long componentId,
+            String componentName,
+            Long feedbackId,
+            String feedbackSummary,
+            String title,
+            String description,
+            TaskStatus status,
+            Long assigneeId,
+            String assigneeName,
+            LocalDate dueDate,
+            boolean overdue,
+            Instant completedAt,
+            Instant createdAt,
+            Instant updatedAt) {
+    }
+}
