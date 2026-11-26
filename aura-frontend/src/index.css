@@ -35,7 +35,7 @@
   font-size: var(--fs-md);
   line-height: var(--lh-base);
   font-weight: var(--fw-regular);
-  color: #12263f;
+  color: #0b1a12;
   background: #ffffff;
 
   font-synthesis: none;
@@ -67,7 +67,7 @@ body {
   font-family: var(--font);
   font-size: var(--fs-md);
   line-height: var(--lh-base);
-  color: #12263f;
+  color: #0b1a12;
   background: #ffffff;
 }
 
