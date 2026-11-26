@@ -65,7 +65,7 @@
 }
 
 .nav-link:hover {
-  color: #2563eb;
+  color: #16a34a;
 }
 
 .status-badge {
@@ -174,7 +174,7 @@
 
 .feature-icon.icon-blue {
   background-color: #eff6ff;
-  color: #2563eb;
+  color: #16a34a;
 }
 
 .feature-icon.icon-green {
@@ -315,7 +315,7 @@
   margin-top: 8px;
   border: none;
   border-radius: 10px;
-  background: #2563eb;
+  background: #007e15;
   color: #ffffff;
   font-size: 0.98rem;
   font-weight: 600;
