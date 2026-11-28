@@ -9,4 +9,5 @@ import java.util.List;
 @Repository
 public interface SubmissionRepository extends JpaRepository<Submission, Long> {
     List<Submission> findByComponent_Id(Long componentId);
+    List<Submission> findByComponent_Project_Id(Long projectId);
 }

@@ -32,22 +32,24 @@ public final class ProjectDtos {
             List<@Size(max = 150) String> members) {
     }
 
-    public record MemberRequest(
-            @Size(max = 150) String name,
-            @Size(max = 200) String email,
-            @Size(max = 100) String role) {
-    }
+        public record MemberRequest(
+                @Size(max = 150) String name,
+                @Size(max = 200) String email,
+                @Size(max = 100) String role,
+                @Size(max = 2000) String responsibilities) {
+        }
 
-    public record MemberResponse(
-            Long id,
-            String name,
-            String email,
-            String role,
-            Long userId,
-            boolean registered,
-            boolean active) {
-    }
 
+        public record MemberResponse(
+                Long id,
+                String name,
+                String email,
+                String role,
+                Long userId,
+                boolean registered,
+                boolean active,
+                String responsibilities) {
+        }
     public record ProjectResponse(
             Long id,
             String title,

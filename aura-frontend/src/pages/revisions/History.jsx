@@ -1,11 +1,24 @@
 import { useState } from "react";
 import { useProject } from "../../context/ProjectContext";
 import { Card, CommitRow, Empty, StatusBadge, formatDate } from "../../components/ui";
+import { projectApi } from "../../services/projectApi";
 
 export default function History({ view }) {
-  const { data, compName } = useProject();
+  const { data, compName, remote } = useProject();
   const { history, feedbackHistory, components } = data;
   const [filter, setFilter] = useState("");
+  const [report, setReport] = useState(null);
+  const [reportError, setReportError] = useState("");
+
+  const makeReport = async () => {
+    setReportError("");
+
+    try {
+      setReport(await projectApi.generateReport(data.project.id));
+    } catch {
+      setReportError("Could not generate the report.");
+    }
+  };
 
   if (view === "timeline") {
     const list = history.filter((h) => !filter || h.componentId === filter);
@@ -55,7 +68,9 @@ export default function History({ view }) {
   }
 
   if (view === "changes") {
-    const list = history.filter((h) => h.changes.added || h.changes.removed);
+    const list = history.filter(
+      (h) => h.type === "revision" || h.changes.added || h.changes.removed
+    );
     const max = Math.max(1, ...list.map((h) => h.changes.added + h.changes.removed));
     return (
       <Card>
@@ -66,14 +81,16 @@ export default function History({ view }) {
               <strong>{h.message}</strong>
               <small className="muted">{compName(h.componentId)} · {formatDate(h.date)} · <code>{h.hash}</code></small>
             </div>
-            <div className="diffbar">
-              <i className="add">+{h.changes.added}</i>
-              <i className="del">−{h.changes.removed}</i>
-              <span className="bars">
-                <b className="g" style={{ width: `${(h.changes.added / max) * 100}%` }} />
-                <b className="r" style={{ width: `${(h.changes.removed / max) * 100}%` }} />
-              </span>
-            </div>
+            {(h.changes.added || h.changes.removed) ? (
+              <div className="diffbar">
+                <i className="add">+{h.changes.added}</i>
+                <i className="del">−{h.changes.removed}</i>
+                <span className="bars">
+                  <b className="g" style={{ width: `${(h.changes.added / max) * 100}%` }} />
+                  <b className="r" style={{ width: `${(h.changes.removed / max) * 100}%` }} />
+                </span>
+              </div>
+            ) : null}
           </div>
         ))}
       </Card>
@@ -81,7 +98,20 @@ export default function History({ view }) {
   }
 
   // records
-  return (
+return (
+  <>
+    {remote && (
+      <div className="toolbar">
+        <button className="btn" onClick={makeReport}>Generate report</button>
+        {report && <button className="btn ghost" onClick={() => window.print()}>Print / save as PDF</button>}
+        {reportError && <span className="muted">{reportError}</span>}
+      </div>
+    )}
+    {report && (
+      <Card title="Revision history report">
+        <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>{report.data}</pre>
+      </Card>
+    )}
     <Card>
       <table className="table">
         <thead><tr><th>Commit</th><th>Type</th><th>Message</th><th>Component</th><th>Author</th><th>Date</th></tr></thead>
@@ -99,5 +129,6 @@ export default function History({ view }) {
         </tbody>
       </table>
     </Card>
+  </>
   );
-}
+}

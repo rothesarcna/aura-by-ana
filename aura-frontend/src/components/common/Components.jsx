@@ -3,10 +3,10 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useProject } from "../../context/ProjectContext";
 import { STATUSES } from "../../data/mockData";
 import ComponentForm from "./ComponentForm";
-import { Card, Empty, ProgressBar, StatusBadge, formatDate } from "../ui";
+import { Card, EMPTY_FILTER, Empty, FilterBar, ProgressBar, StatusBadge, formatDate, inDates } from "../ui";
 
 export default function Components({ view }) {
-  const { data = {}, actions = {} } = useProject();
+  const { data = {}, actions = {}, user } = useProject();
   const {
     components = [],
     files = [],
@@ -19,12 +19,23 @@ export default function Components({ view }) {
   const [params, setParams] = useSearchParams();
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [f, setF] = useState(EMPTY_FILTER);
   const closeForm = () => {
     setFormOpen(false);
     setEditing(null);
   };
+  
 
   const owner = (id) => (members || []).find((m) => m.id === id)?.name ?? "—";
+  const shownComponents = components.filter(
+    (c) =>
+      (!f.q || `${c.name} ${c.description || ""}`.toLowerCase().includes(f.q.toLowerCase())) &&
+      (!f.status || c.status === f.status) &&
+      (!f.member || c.owner === f.member) &&
+      inDates(c.due, f.from, f.to)
+  );
+  const hasAdviser = (members || []).some((m) => m.role === "Adviser" && m.registered);
+  const canDecide = !hasAdviser || user?.role === "adviser";
 
   if (view === "list") {
     return (
@@ -48,10 +59,15 @@ export default function Components({ view }) {
             </button>
           </div>
         )}
+        
+
+        <FilterBar value={f} onChange={setF} statuses={STATUSES} members={members} dateLabel="Due" />
 
         <Card>
           {components.length === 0 ? (
             <Empty text="No components yet. Add your first chapter, diagram, prototype or presentation." />
+          ) : shownComponents.length === 0 ? (
+            <Empty text="No components match your filters." />
           ) : (
             <table className="table">
               <thead>
@@ -274,7 +290,7 @@ export default function Components({ view }) {
                       Request approval
                     </button>
                   )}
-                  {c.approval === "Pending" && (
+                  {c.approval === "Pending" && canDecide && (
                     <span className="btn-row" style={{ margin: 0 }}>
                       <button className="btn small" onClick={() => actions.setApproval(c.id, "Approved")}>
                         Mark approved

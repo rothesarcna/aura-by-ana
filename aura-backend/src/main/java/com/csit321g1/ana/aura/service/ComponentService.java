@@ -3,6 +3,7 @@ package com.csit321g1.ana.aura.service;
 import com.csit321g1.ana.aura.dto.ComponentDtos.ComponentRequest;
 import com.csit321g1.ana.aura.dto.ComponentDtos.ComponentResponse;
 import com.csit321g1.ana.aura.dto.ComponentDtos.StatusChangeRequest;
+import com.csit321g1.ana.aura.exception.ForbiddenException;
 import com.csit321g1.ana.aura.model.ComponentType;
 import com.csit321g1.ana.aura.model.HistoryType;
 import com.csit321g1.ana.aura.model.ProjectComponent;
@@ -11,6 +12,7 @@ import com.csit321g1.ana.aura.model.WorkStatus;
 import com.csit321g1.ana.aura.repository.ProjectComponentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.csit321g1.ana.aura.exception.ForbiddenException;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -26,15 +28,18 @@ public class ComponentService {
     private final AccessService access;
     private final SnapshotService snapshots;
     private final HistoryService history;
+    private final NotificationService notifications;
 
     public ComponentService(ProjectComponentRepository components,
                             AccessService access,
                             SnapshotService snapshots,
-                            HistoryService history) {
+                            HistoryService history,
+                            NotificationService notifications) {
         this.components = components;
         this.access = access;
         this.snapshots = snapshots;
         this.history = history;
+        this.notifications = notifications;
     }
 
     // CREATE
@@ -127,6 +132,18 @@ public class ComponentService {
         WorkStatus before = c.getStatus();
         WorkStatus after = req.status();
 
+        // Once an adviser account is on the project, only the adviser records the review decision.
+        // Projects without an adviser account keep the old behaviour (students record it themselves).
+        boolean decision = after == WorkStatus.UNDER_REVIEW || after == WorkStatus.FOR_REVISION || after == WorkStatus.APPROVED;
+        if (decision && before != after) {
+            boolean isAdviser = "adviser".equalsIgnoreCase(ctx.user().getRole());
+            boolean projectHasAdviser = snapshots.load(ctx.project()).activeMembers().stream()
+                    .anyMatch(m -> m.getUser() != null && "adviser".equalsIgnoreCase(m.getUser().getRole()));
+            if (projectHasAdviser && !isAdviser) {
+                throw new ForbiddenException("Only the adviser can set this status.");
+            }
+        }
+
         if (before != after) {
             c.setStatus(after);
             if (after == WorkStatus.APPROVED) {
@@ -141,6 +158,9 @@ public class ComponentService {
                     .component(c)
                     .values(before.getLabel(), after.getLabel())
                     .save();
+
+            notifications.notifyProject(ctx.project(), ctx.user(), "STATUS_CHANGED",
+                    "\"" + c.getName() + "\" is now " + after.getLabel());
         }
         return snapshots.load(ctx.project()).toComponent(c);
     }

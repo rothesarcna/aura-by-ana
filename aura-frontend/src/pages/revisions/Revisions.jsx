@@ -3,6 +3,9 @@ import { Link } from "react-router-dom";
 import { useProject } from "../../context/ProjectContext";
 import { Card, Empty, StatusBadge } from "../../components/ui";
 
+
+
+
 const VIEW_STATUS = {
   pending: "Pending",
   submitted: "Submitted",
@@ -94,8 +97,12 @@ function AddTask({ revisionId }) {
   );
 }
 
+const DECISIONS = new Set(["Under Review", "For Revision", "Approved"]);
+
 export default function Revisions({ view }) {
-  const { data, actions, compName } = useProject();
+  const { data, actions, compName, user } = useProject();
+  const hasAdviser = data.members.some((m) => m.role === "Adviser" && m.registered);
+  const canDecide = !hasAdviser || user?.role === "adviser";
   const status = VIEW_STATUS[view];
   const items = data.revisions.filter((r) => r.status === status);
 
@@ -121,7 +128,7 @@ export default function Revisions({ view }) {
             ))}
             <AddTask revisionId={r.id} />
             <div className="btn-row">
-              {NEXT[r.status].map(([label, next]) => (
+              {NEXT[r.status].filter(([, next]) => canDecide || !DECISIONS.has(next)).map(([label, next]) => (
                 <button
                   key={next}
                   className="btn small"

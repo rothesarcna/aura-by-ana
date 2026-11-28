@@ -15,6 +15,9 @@ import com.csit321g1.ana.aura.model.ProjectMember;
 import com.csit321g1.ana.aura.model.RevisionTask;
 import com.csit321g1.ana.aura.model.TaskStatus;
 import com.csit321g1.ana.aura.model.WorkStatus;
+import com.csit321g1.ana.aura.model.FeedbackType;
+import com.csit321g1.ana.aura.model.TaskPriority;
+import java.time.temporal.ChronoUnit;
 
 import java.time.LocalDate;
 import java.util.HashMap;
@@ -121,6 +124,26 @@ public class ProjectSnapshot {
         return t.getDueDate() != null && t.getDueDate().isBefore(today) && t.getStatus() != TaskStatus.DONE;
     }
 
+    public TaskPriority priorityOf(RevisionTask t) {
+        return t.getPriority() == null ? TaskPriority.MEDIUM : t.getPriority();
+    }
+
+    /** Higher = needs attention sooner: priority + how close/late the deadline is. Done tasks are -1. */
+    public int urgency(RevisionTask t) {
+        if (t.getStatus() == TaskStatus.DONE) return -1;
+        int score = switch (priorityOf(t)) {
+            case URGENT -> 40;
+            case HIGH -> 30;
+            case MEDIUM -> 20;
+            case LOW -> 10;
+        };
+        if (t.getDueDate() != null) {
+            long days = ChronoUnit.DAYS.between(today, t.getDueDate());
+            score += days < 0 ? 50 : days <= 2 ? 30 : days <= 7 ? 15 : 0;
+        }
+        return score;
+    }
+
     public String componentName(Long componentId) {
         ProjectComponent c = componentById.get(componentId);
         return c == null ? null : c.getName();
@@ -136,7 +159,8 @@ public class ProjectSnapshot {
                 m.getRole(),
                 m.getUser() == null ? null : m.getUser().getId(),
                 m.getUser() != null,
-                m.isActive());
+                m.isActive(),
+                m.getResponsibilities());
     }
 
     public ComponentResponse toComponent(ProjectComponent c) {
@@ -186,8 +210,25 @@ public class ProjectSnapshot {
                 f.getRecorded_by_id() == null ? null : f.getRecorded_by_id().getFullName(),
                 f.getCreatedAt(),
                 f.getResolvedAt(),
-                repliesByFeedback.getOrDefault(f.getId(), List.of()));
+                repliesByFeedback.getOrDefault(f.getId(), List.of()),
+                f.getClarifiesFeedback() == null ? null : f.getClarifiesFeedback().getId(),
+                conflictsOf(f));
     }
+
+    private List<Long> conflictsOf(Feedback f) {
+        if (f.getStatus() != FeedbackStatus.OPEN || f.getType() != FeedbackType.FEEDBACK) {
+            return List.of();
+        }
+        return feedback.stream()
+                .filter(o -> !o.getId().equals(f.getId())
+                        && o.getStatus() == FeedbackStatus.OPEN
+                        && o.getType() == FeedbackType.FEEDBACK
+                        && o.getComponent_id().getId().equals(f.getComponent_id().getId())
+                        && ConflictDetector.conflicts(f.getText(), o.getText()))
+                .map(Feedback::getId)
+                .collect(Collectors.toList());
+    }
+
 
     public TaskResponse toTask(RevisionTask t) {
         return new TaskResponse(
@@ -206,7 +247,9 @@ public class ProjectSnapshot {
                 isTaskOverdue(t),
                 t.getCompletedAt(),
                 t.getCreatedAt(),
-                t.getUpdatedAt());
+                t.getUpdatedAt(),
+                priorityOf(t),
+                urgency(t));
     }
 
     public ProjectResponse toProject() {

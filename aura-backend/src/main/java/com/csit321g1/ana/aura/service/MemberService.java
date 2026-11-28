@@ -12,6 +12,8 @@ import com.csit321g1.ana.aura.repository.ProjectMemberRepository;
 import com.csit321g1.ana.aura.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.Objects;
+
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -73,6 +75,7 @@ public class MemberService {
         m.setName(name);
         m.setEmail(linked != null ? linked.getEmail() : email);
         m.setRole(Text.clean(req.role()) == null ? "Member" : Text.clean(req.role()));
+        m.setResponsibilities(Text.clean(req.responsibilities()));
         m = members.save(m);
 
         history.entry(ctx.project(), ctx.user(), HistoryType.MEMBER, "Added group member " + name).save();
@@ -83,18 +86,32 @@ public class MemberService {
         AccessService.ProjectAccess ctx = access.require(projectId, userId);
         ProjectMember m = access.member(projectId, memberId);
 
-        if (Text.clean(req.name()) != null) {
-            m.setName(Text.clean(req.name()));
+        boolean detailsChanged = false;
+        String name = Text.clean(req.name());
+        if (name != null && !name.equals(m.getName())) {
+            m.setName(name);
+            detailsChanged = true;
         }
-        if (Text.clean(req.role()) != null) {
-            m.setRole(Text.clean(req.role()));
+        String role = Text.clean(req.role());
+        if (role != null && !role.equals(m.getRole())) {
+            m.setRole(role);
+            detailsChanged = true;
         }
         if (m.getUser() == null && req.email() != null) {
-            m.setEmail(Text.clean(req.email()));
+            String email = Text.clean(req.email());
+            if (!Objects.equals(email, m.getEmail())) {
+                m.setEmail(email);
+                detailsChanged = true;
+            }
+        }
+        if (req.responsibilities() != null) {
+            m.setResponsibilities(Text.clean(req.responsibilities())); // not logged: it changes often
         }
         members.save(m);
 
-        history.entry(ctx.project(), ctx.user(), HistoryType.MEMBER, "Updated group member " + m.getName()).save();
+        if (detailsChanged) {
+            history.entry(ctx.project(), ctx.user(), HistoryType.MEMBER, "Updated group member " + m.getName()).save();
+        }
         return snapshots.load(ctx.project()).toMember(m);
     }
 

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useProject } from "../../context/ProjectContext";
-import { Card, Empty, StatusBadge, formatDate } from "../../components/ui";
+import { Card, EMPTY_FILTER, Empty, FilterBar, StatusBadge, formatDate, inDates } from "../../components/ui";
+import { projectApi } from "../../services/projectApi";
 
 const TASK_STATUSES = ["To Do", "In Progress", "Needs Clarification", "Done"];
 
@@ -18,6 +19,9 @@ function FeedbackList({ items }) {
             <StatusBadge status={f.status} />
             {f.version > 1 && <span className="chip">v{f.version}</span>}
             <span className="chip">{compName(f.componentId)}</span>
+            {f.possibleConflicts?.length > 0 && (
+              <span className="chip" style={{ background: "#fee2e2", color: "#991b1b" }}>May conflict with other feedback</span>
+            )}
             {f.type === "feedback" && f.status === "Open" && !linked(f.id) && (
               <span className="chip" style={{ background: "#fef3c7", color: "#92400e" }}>No next action yet</span>
             )}
@@ -95,15 +99,16 @@ function versionsOf(f, all) {
 // Next Action System: turn one feedback item into trackable tasks
 function NextActions({ feedback, chainIds, readOnly }) {
   const { data, actions, memberName } = useProject();
-  const [form, setForm] = useState({ title: "", assignee: "", due: "" });
+  const [form, setForm] = useState({ title: "", assignee: "", due: "", priority: "Medium" });
   const [error, setError] = useState("");
   const mine = (data.tasks || []).filter((t) => chainIds.includes(t.feedbackId));
+  
 
   const add = async (e) => {
     e.preventDefault();
     if (!form.title.trim()) return setError("Describe the action to take.");
     const result = await actions.addTask({ ...form, componentId: feedback.componentId, feedbackId: feedback.id });
-    if (result !== null) setForm({ title: "", assignee: "", due: "" });
+    if (result !== null) setForm({ title: "", assignee: "", due: "", priority: "Medium" });
     setError("");
   };
 
@@ -115,7 +120,7 @@ function NextActions({ feedback, chainIds, readOnly }) {
           <span>
             {t.title}
             <small className="muted" style={{ display: "block" }}>
-              {memberName(t.assignee)} · due {formatDate(t.due)}
+              {t.priority} · {memberName(t.assignee)} · due {formatDate(t.due)}
               {t.feedbackId !== feedback.id && " · linked to an earlier version"}
             </small>
           </span>
@@ -140,8 +145,10 @@ function NextActions({ feedback, chainIds, readOnly }) {
               {data.members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           </label>
-          <label>Deadline
-            <input type="date" value={form.due} onChange={(e) => setForm({ ...form, due: e.target.value })} />
+          <label>Priority
+            <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
+              {["Low", "Medium", "High", "Urgent"].map((p) => <option key={p}>{p}</option>)}
+            </select>
           </label>
           <button className="btn" type="submit">Add action</button>
         </form>
@@ -219,6 +226,94 @@ function ReviseFeedback({ feedback, onRevised }) {
   );
 }
 
+// Flag an existing feedback record as unclear/conflicting and send the question to the instructor
+function FlagUnclear({ feedback }) {
+  const { actions, user } = useProject();
+  const [open, setOpen] = useState(false);
+  const [question, setQuestion] = useState("");
+
+  if (!open) {
+    return <button type="button" className="btn ghost small" onClick={() => setOpen(true)}>Flag as unclear</button>;
+  }
+
+  const save = async (e) => {
+    e.preventDefault();
+    if (!question.trim()) return;
+    const result = await actions.addFeedback({
+      componentId: feedback.componentId,
+      type: "clarification",
+      givenBy: user?.fullName || "",
+      text: question,
+      clarifiesFeedbackId: feedback.id,
+    });
+    if (result !== null) {
+      setQuestion("");
+      setOpen(false);
+    }
+  };
+
+  return (
+    <form className="form inline" onSubmit={save}>
+      <input value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="What is unclear or conflicting?" />
+      <button className="btn small" type="submit">Send question</button>
+    </form>
+  );
+}
+
+// AI assistant. Every suggestion can be edited, accepted or rejected.
+function Assistant() {
+  const { data, remote } = useProject();
+  const [suggestion, setSuggestion] = useState(null);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  if (!remote) return null;
+
+  const ask = async (mode) => {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await projectApi.askAssistant(data.project.id, mode);
+      setSuggestion(result);
+      setText(result.text);
+    } catch {
+      setError("The assistant is not available right now.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const review = async (status) => {
+    try {
+      setSuggestion(await projectApi.reviewSuggestion(data.project.id, suggestion.id, status, text));
+    } catch {
+      setError("Could not save your decision.");
+    }
+  };
+
+  return (
+    <Card title="Feedback assistant">
+      <div className="btn-row">
+        {[["summarize", "Summarize"], ["simplify", "Simplify"], ["patterns", "Find patterns"], ["plan", "Suggest actions"]].map(([mode, label]) => (
+          <button key={mode} type="button" className="btn ghost small" disabled={busy} onClick={() => ask(mode)}>{label}</button>
+        ))}
+      </div>
+      {error && <div className="alert error">{error}</div>}
+      {suggestion && (
+        <>
+          <textarea rows={8} value={text} onChange={(e) => setText(e.target.value)} />
+          <div className="btn-row">
+            <button type="button" className="btn small" onClick={() => review("ACCEPTED")}>Accept</button>
+            <button type="button" className="btn ghost small" onClick={() => review("EDITED")}>Save my edit</button>
+            <button type="button" className="btn ghost small danger" onClick={() => review("REJECTED")}>Reject</button>
+            <small className="muted">{suggestion.status}</small>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 function FeedbackDetails() {
   const { data, actions, compName } = useProject();
   const [params, setParams] = useSearchParams();
@@ -271,7 +366,12 @@ function FeedbackDetails() {
         )}
         <p className="fb-text">{f.text}</p>
         <small className="muted">{f.author} · {formatDate(f.date)}</small>
-        {!superseded && <div className="btn-row"><ReviseFeedback key={f.id} feedback={f} onRevised={(id) => setParams({ id })} /></div>}
+        {!superseded && (
+          <div className="btn-row">
+            <ReviseFeedback key={f.id} feedback={f} onRevised={(id) => setParams({ id })} />
+            {f.type === "feedback" && <FlagUnclear key={`u${f.id}`} feedback={f} />}
+          </div>
+        )}
 
         <h4>Replies &amp; clarifications</h4>
         {f.replies.length === 0 && <Empty text="No replies yet." />}
@@ -308,9 +408,28 @@ function FeedbackDetails() {
 export default function Feedback({ view }) {
   const { data } = useProject();
   const { feedback } = data;
-  if (view === "all") return <FeedbackList items={feedback} />;
+  const [f, setF] = useState(EMPTY_FILTER);
+
+  // search text, status, date received, and "assigned to" (via the tasks linked to the feedback)
+  const apply = (list) =>
+    list.filter(
+      (x) =>
+        (!f.q || `${x.text} ${x.author}`.toLowerCase().includes(f.q.toLowerCase())) &&
+        (!f.status || x.status === f.status) &&
+        (!f.member || (data.tasks || []).some((t) => t.feedbackId === x.id && t.assignee === f.member)) &&
+        inDates(x.date, f.from, f.to)
+    );
+  const bar = <FilterBar value={f} onChange={setF} statuses={["Open", "Resolved"]} members={data.members} dateLabel="Received" />;
+
   if (view === "add") return <AddFeedback />;
   if (view === "details") return <FeedbackDetails />;
-  if (view === "clarifications") return <FeedbackList items={feedback.filter((f) => f.type === "clarification")} />;
-  return <FeedbackList items={feedback.filter((f) => f.status === "Open")} />;
-}
+  let items = feedback.filter((x) => x.status === "Open");
+  if (view === "all") items = feedback;
+  if (view === "clarifications") items = feedback.filter((x) => x.type === "clarification");
+  return (
+    <>
+      {bar}
+      <FeedbackList items={apply(items)} />
+    </>
+  );
+}

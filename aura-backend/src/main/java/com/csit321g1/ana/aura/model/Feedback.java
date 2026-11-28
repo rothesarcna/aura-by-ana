@@ -32,6 +32,10 @@ public class Feedback {
     @JoinColumn(name = "component_id", nullable = false)
     private ProjectComponent component_id;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "clarifies_feedback_id")
+    private Feedback clarifiesFeedback;
+
     @Enumerated(EnumType.STRING)
     @Column(length = 20, nullable = false)
     private FeedbackType type = FeedbackType.FEEDBACK;

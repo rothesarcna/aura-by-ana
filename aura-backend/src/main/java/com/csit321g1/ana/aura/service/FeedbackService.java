@@ -40,28 +40,44 @@ public class FeedbackService {
     private final AccessService access;
     private final SnapshotService snapshots;
     private final HistoryService history;
+    private final NotificationService notifications;
 
     public FeedbackService(FeedbackRepository feedbackRepo,
                            FeedbackReplyRepository replies,
                            AccessService access,
                            SnapshotService snapshots,
-                           HistoryService history) {
+                           HistoryService history,
+                           NotificationService notifications) {
         this.feedbackRepo = feedbackRepo;
         this.replies = replies;
         this.access = access;
         this.snapshots = snapshots;
         this.history = history;
+        this.notifications = notifications;
     }
 
-    // CREATE: record feedback (or a clarification question) against one component
     public FeedbackResponse create(Long userId, Long projectId, FeedbackRequest req) {
         AccessService.ProjectAccess ctx = access.require(projectId, userId);
         ProjectComponent component = access.component(projectId, req.componentId());
 
         FeedbackType type = req.type() == null ? FeedbackType.FEEDBACK : req.type();
+
+        // a question about an earlier feedback record
+        Feedback target = null;
+        if (req.clarifiesFeedbackId() != null) {
+            target = access.feedback(projectId, req.clarifiesFeedbackId());
+            if (!target.getComponent_id().getId().equals(component.getId())) {
+                throw new BadRequestException("The question must be about feedback on the same component.");
+            }
+            type = FeedbackType.CLARIFICATION;
+        }
+
         String givenBy = Text.clean(req.givenBy());
         if (givenBy == null) {
-            givenBy = type == FeedbackType.CLARIFICATION ? ctx.user().getFullName() : ctx.project().getAdviser();
+            boolean adviser = "adviser".equalsIgnoreCase(ctx.user().getRole());
+            givenBy = (adviser || type == FeedbackType.CLARIFICATION)
+                    ? ctx.user().getFullName()
+                    : ctx.project().getAdviser();
         }
 
         Feedback f = new Feedback();
@@ -74,6 +90,7 @@ public class FeedbackService {
         f.setStatus(FeedbackStatus.OPEN);
         f.setVersionNumber(1);
         f.setRecorded_by_id(ctx.user());
+        f.setClarifiesFeedback(target);
         f = feedbackRepo.save(f);
 
         String label = type == FeedbackType.CLARIFICATION ? "Clarification question" : "Feedback";
@@ -82,6 +99,11 @@ public class FeedbackService {
                 .component(component)
                 .feedback(f)
                 .save();
+
+        notifications.notifyProject(ctx.project(), ctx.user(),
+                type == FeedbackType.CLARIFICATION ? "CLARIFICATION" : "NEW_FEEDBACK",
+                label + " on \"" + component.getName() + "\": " + Text.snippet(f.getText(), 80));
+
         return snapshots.load(ctx.project()).toFeedback(f);
     }
 

@@ -1,10 +1,16 @@
 package com.csit321g1.ana.aura.controller;
 
-import com.csit321g1.ana.aura.model.ProjectReport;
 import com.csit321g1.ana.aura.service.ProjectReportService;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.csit321g1.ana.aura.service.ProjectReportService.ReportResponse;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
@@ -13,24 +19,25 @@ import java.util.Map;
 @RequestMapping("/api/projects/{projectId}/reports")
 public class ProjectReportController {
 
-    @Autowired
-    private ProjectReportService reportService;
+    private final ProjectReportService service;
+
+    public ProjectReportController(ProjectReportService service) {
+        this.service = service;
+    }
 
     @PostMapping
-    public ResponseEntity<?> createReport(@PathVariable Long projectId, @RequestBody Map<String, Object> payload) {
-        try {
-            Long userId = Long.valueOf(payload.get("generatedById").toString());
-            String type = payload.get("reportType").toString();
-            String data = payload.getOrDefault("reportData", "").toString();
-            
-            return ResponseEntity.ok(reportService.generateReport(projectId, userId, type, data));
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+    public ResponseEntity<ReportResponse> create(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable Long projectId,
+            @RequestBody(required = false) Map<String, String> body) {
+        String type = body == null ? null : body.get("reportType");
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.generate(userId, projectId, type));
     }
 
     @GetMapping
-    public ResponseEntity<List<ProjectReport>> getProjectReports(@PathVariable Long projectId) {
-        return ResponseEntity.ok(reportService.getReportsForProject(projectId));
+    public List<ReportResponse> list(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable Long projectId) {
+        return service.list(userId, projectId);
     }
 }

@@ -17,7 +17,7 @@ import { ProjectContext } from "./sharedProjectContext";
  *   tasks and open feedback are recomputed from the server data every time a project loads.
  */
 
-const EMPTY = { components: [], revisions: [], feedback: [], feedbackHistory: [], files: [], history: [], members: [], tasks: [] };
+const EMPTY = { components: [], revisions: [], feedback: [], feedbackHistory: [], files: [], history: [], members: [], submissions: [], tasks: [] };
 
 const uid = (p) => `${p}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const nowIso = () => new Date().toISOString();
@@ -57,56 +57,6 @@ function loadLocal(key) {
 
 const average = (list) => (list.length ? Math.round(list.reduce((s, c) => s + (c.progress || 0), 0) / list.length) : null);
 
-const shortDate = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-
-/* Notifications worth showing, worked out from the project's current data. */
-function deriveNotes(project, ws, feedbackAll) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const daysUntil = (iso) => Math.round((new Date(`${iso}T00:00:00`) - today) / 86400000);
-  const compName = (id) => ws.components.find((c) => c.id === id)?.name ?? "a component";
-  const base = { read: false, projectId: project.id, projectTitle: project.title, auto: true, date: nowIso() };
-  const notes = [];
-
-  ws.components.forEach((c) => {
-    if (c.status !== "Approved" && c.due) {
-      const d = daysUntil(c.due);
-      if (d < 0) notes.push({ ...base, id: `auto:due:${c.id}:${c.due}`, category: "deadline", text: `${c.name} was due on ${shortDate(c.due)}` });
-      else if (d <= 7) notes.push({ ...base, id: `auto:due:${c.id}:${c.due}`, category: "deadline", text: `${c.name} is due on ${shortDate(c.due)}` });
-    }
-    if (c.approval === "Pending") {
-      notes.push({ ...base, id: `auto:apr:${c.id}:${c.status}`, category: "approval", text: `${c.name} is waiting for the adviser's decision` });
-    }
-    const open = ws.tasks.filter((t) => t.componentId === c.id && t.status !== "Done").length;
-    if (c.status === "For Revision" && open > 0) {
-      notes.push({ ...base, id: `auto:rev:${c.id}:${open}`, category: "reminder", text: `${c.name} still has ${open} unfinished revision task${open === 1 ? "" : "s"}` });
-    }
-  });
-
-  ws.tasks.forEach((t) => {
-    if (t.status !== "Done" && t.due && daysUntil(t.due) < 0) {
-      notes.push({ ...base, id: `auto:task:${t.id}:${t.due}`, category: "reminder", text: `Task "${t.title}" is overdue (${compName(t.componentId)}, due ${shortDate(t.due)})` });
-    }
-  });
-
-  feedbackAll.forEach((f) => {
-    if (f.status !== "Open") return;
-    if (f.type === "clarification") {
-      notes.push({ ...base, id: `auto:clar:${f.id}`, category: "feedback", text: `Clarification still unanswered on ${compName(f.componentId)}: ${f.text.slice(0, 60)}` });
-    } else {
-      notes.push({ ...base, id: `auto:fb:${f.id}`, category: "feedback", text: `Open feedback on ${compName(f.componentId)}: ${f.text.slice(0, 60)}` });
-    }
-  });
-  return notes;
-}
-
-// Replace this project's computed notifications, keeping each one's read state and original date.
-function mergeAutoNotes(existing, project, ws, feedbackAll) {
-  const previous = new Map(existing.filter((n) => n.auto && n.projectId === project.id).map((n) => [n.id, n]));
-  const kept = existing.filter((n) => !(n.auto && n.projectId === project.id));
-  const fresh = deriveNotes(project, ws, feedbackAll).map((n) => (previous.has(n.id) ? { ...n, read: previous.get(n.id).read, date: previous.get(n.id).date } : n));
-  return [...fresh, ...kept];
-}
 
 export function RemoteProjectProvider({ children }) {
   const [user, setUser] = useState(() => getCurrentUser());
@@ -116,6 +66,21 @@ export function RemoteProjectProvider({ children }) {
   const [workspaces, setWorkspaces] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // notifications come from the server (deadlines, overdue tasks, new feedback, clarifications, assignments)
+  const [notifications, setNotifications] = useState([]);
+  const loadNotifications = useCallback(async () => {
+    try {
+      setNotifications(await projectApi.listNotifications());
+    } catch {
+      /* keep the previous list if the request fails */
+    }
+  }, []);
+  useEffect(() => {
+    loadNotifications();
+    const timer = setInterval(loadNotifications, 60000);
+    return () => clearInterval(timer);
+  }, [loadNotifications]);
 
   const selectedId = local.selectedId;
   const selectedRef = useRef(selectedId);
@@ -152,15 +117,16 @@ export function RemoteProjectProvider({ children }) {
         components: w.components,
         tasks: w.tasks,
         members: w.members,
+        submissions: w.submissions,
         history: w.history,
         feedback: w.feedbackAll.filter((f) => f.status !== "Superseded"),
         feedbackHistory: w.feedbackAll,
       };
       setProjects((list) => (list.some((p) => p.id === project.id) ? list.map((p) => (p.id === project.id ? project : p)) : [project, ...list]));
       setWorkspaces((prev) => ({ ...prev, [id]: workspace }));
-      setLocal((l) => ({ ...l, notifications: mergeAutoNotes(l.notifications, project, workspace, w.feedbackAll) }));
+      loadNotifications();
     },
-    [loadProjects]
+    [loadProjects, loadNotifications]
   );
 
   useEffect(() => {
@@ -199,28 +165,19 @@ export function RemoteProjectProvider({ children }) {
     }
   };
 
-  const pushNote = (category, text) => {
-    const p = projects.find((x) => x.id === selectedRef.current);
-    setLocal((l) => ({
-      ...l,
-      notifications: [{ id: uid("n"), category, text, date: nowIso(), read: false, projectId: p?.id, projectTitle: p?.title }, ...l.notifications],
-    }));
-  };
 
   /* ---------- derived values ---------- */
   const selectedProject = projects.find((p) => p.id === selectedId) || null;
   const ws = (selectedProject && workspaces[selectedProject.id]) || EMPTY;
-  const responsibilities = (selectedProject && local.responsibilities[selectedProject.id]) || {};
-  const files = (selectedProject && local.files[selectedProject.id]) || [];
+  const files = [...(ws.submissions || []), ...((selectedProject && local.files[selectedProject.id]) || [])];
 
   const data = {
     user,
-    notifications: local.notifications,
+    notifications,
     project: selectedProject ? { ...selectedProject, adviser: selectedProject.professor } : {},
     ...EMPTY,
     ...ws,
     revisions: deriveRevisions(ws.components, ws.tasks),
-    members: ws.members.map((m) => ({ ...m, responsibilities: responsibilities[m.id] || [] })),
     files,
   };
 
@@ -425,6 +382,72 @@ export function RemoteProjectProvider({ children }) {
         ...l,
         files: { ...l.files, [id]: (l.files[id] || []).map((f) => (f.id === fileId ? { ...f, componentId } : f)) },
       })),
+
+    // addComponent body: add  type: form.type || "Other",
+// updateComponent body: add  type: patch.type ?? cur.type,
+
+addFeedback: ({ componentId, type, givenBy, text, clarifiesFeedbackId }) =>
+  run(() =>
+    projectApi.createFeedback(sid(), {
+      componentId: toNumber(componentId),
+      type,
+      text: text.trim(),
+      givenBy: givenBy?.trim() || null,
+      clarifiesFeedbackId: toNumber(clarifiesFeedbackId),
+    })
+  ),
+
+addTask: async ({ title, assignee = "", componentId = "", due = "", feedbackId = "", status = "To Do", priority = "Medium" }) => {
+  if (!feedbackId && !componentId) {
+    setError("Choose a component (or open a feedback item) for this task.");
+    return null;
+  }
+  const body = { title: title.trim(), assigneeId: toNumber(assignee), dueDate: due || null, status, priority };
+  return run(() =>
+    feedbackId
+      ? projectApi.createFeedbackTask(sid(), feedbackId, body)
+      : projectApi.createTask(sid(), { ...body, componentId: toNumber(componentId) })
+  );
+},
+
+// add after setTaskStatus
+updateTask: (id, patch) =>
+  run(() => {
+    const t = ws.tasks.find((x) => x.id === id);
+    return projectApi.updateTask(sid(), id, {
+      title: patch.title ?? t.title,
+      description: patch.description ?? t.description,
+      assigneeId: toNumber("assignee" in patch ? patch.assignee : t.assignee),
+      dueDate: ("due" in patch ? patch.due : t.due) || null,
+      priority: patch.priority ?? t.priority,
+    });
+  }),
+
+    addResponsibility: (memberId, text) => {
+      const m = ws.members.find((x) => x.id === memberId);
+      const next = [...(m?.responsibilities || []), text].join("\n");
+      return run(() => projectApi.updateMember(sid(), memberId, { responsibilities: next }));
+    },
+
+    addFile: ({ kind, name, url, size, componentId }) => {
+      if (componentId && kind !== "reference") {
+        return run(() => projectApi.addSubmission(sid(), componentId, { reference: url || name, notes: name }));
+      }
+      const f = { id: uid("x"), kind, name, url, size, componentId, addedBy: user?.fullName || "You", date: nowIso() };
+      patchLocalProject((l, id) => ({ ...l, files: { ...l.files, [id]: [f, ...(l.files[id] || [])] } }));
+      return undefined;
+    },
+
+    markRead: (id) => {
+      setNotifications((list) => list.map((n) => (n.id === id ? { ...n, read: true } : n)));
+      projectApi.markNotificationRead(id).catch(() => {});
+    },
+
+    markAllRead: (category) => {
+      const ids = notifications.filter((n) => !n.read && (!category || n.category === category)).map((n) => n.id);
+      setNotifications((list) => list.map((n) => (ids.includes(n.id) ? { ...n, read: true } : n)));
+      ids.forEach((id) => projectApi.markNotificationRead(id).catch(() => {}));
+    },
 
     removeFile: (fileId) =>
       patchLocalProject((l, id) => ({ ...l, files: { ...l.files, [id]: (l.files[id] || []).filter((f) => f.id !== fileId) } })),
