@@ -1,8 +1,35 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useProject } from "../../context/ProjectContext";
-import { Card, EMPTY_FILTER, Empty, FilterBar, StatusBadge, formatDate, inDates } from "../../components/ui";
+import {
+  Card,
+  EMPTY_FILTER,
+  Empty,
+  FilterBar,
+  StatusBadge,
+  formatDate,
+  inDates
+} from "../../components/ui";
 import { projectApi } from "../../services/projectApi";
+
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+
+import {
+  Sparkles,
+  FileText,
+  AlignLeft,
+  Search,
+  ListChecks,
+  Check,
+  Pencil,
+  X,
+  LoaderCircle,
+  Copy,
+  Save
+} from "lucide-react";
+
+import "./FeedbackAssistant.css";
 
 const TASK_STATUSES = ["To Do", "In Progress", "Needs Clarification", "Done"];
 
@@ -261,58 +288,428 @@ function FlagUnclear({ feedback }) {
 }
 
 // AI assistant. Every suggestion can be edited, accepted or rejected.
+
 function Assistant() {
   const { data, remote } = useProject();
+
   const [suggestion, setSuggestion] = useState(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const [error, setError] = useState("");
+  const [activeMode, setActiveMode] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [copied, setCopied] = useState(false);
+
   if (!remote) return null;
+
+  const modes = [
+    {
+      id: "summarize",
+      label: "Summarize",
+      icon: FileText,
+      description: "Get the key points from your feedback."
+    },
+    {
+      id: "simplify",
+      label: "Simplify",
+      icon: AlignLeft,
+      description: "Understand feedback in simpler language."
+    },
+    {
+      id: "patterns",
+      label: "Find patterns",
+      icon: Search,
+      description: "Identify recurring issues and mistakes."
+    },
+    {
+      id: "plan",
+      label: "Suggest actions",
+      icon: ListChecks,
+      description: "Turn feedback into manageable revision steps."
+    }
+  ];
+
+  const selectedMode = modes.find(
+    (mode) => mode.id === activeMode
+  );
 
   const ask = async (mode) => {
     setBusy(true);
     setError("");
+    setActiveMode(mode);
+    setSuggestion(null);
+    setText("");
+    setEditing(false);
+    setCopied(false);
+
     try {
-      const result = await projectApi.askAssistant(data.project.id, mode);
+      const result = await projectApi.askAssistant(
+        data.project.id,
+        mode
+      );
+
       setSuggestion(result);
       setText(result.text);
-    } catch {
-      setError("The assistant is not available right now.");
+    } catch (err) {
+      setError(
+        err?.message ||
+        "The assistant is not available right now."
+      );
     } finally {
       setBusy(false);
     }
   };
 
   const review = async (status) => {
+    if (!suggestion) return;
+
+    if (status === "EDITED" && !text.trim()) {
+      setError("Your edited suggestion cannot be empty.");
+      return;
+    }
+
+    setReviewing(true);
+    setError("");
+
     try {
-      setSuggestion(await projectApi.reviewSuggestion(data.project.id, suggestion.id, status, text));
-    } catch {
-      setError("Could not save your decision.");
+      const result = await projectApi.reviewSuggestion(
+        data.project.id,
+        suggestion.id,
+        status,
+        status === "EDITED" ? text : suggestion.text
+      );
+
+      setSuggestion(result);
+      setText(result.text);
+      setEditing(false);
+      setCopied(false);
+    } catch (err) {
+      setError(
+        err?.message ||
+        "Could not save your decision."
+      );
+    } finally {
+      setReviewing(false);
     }
   };
 
+  const copySuggestion = async () => {
+    try {
+      await navigator.clipboard.writeText(
+        editing ? text : suggestion.text
+      );
+
+      setCopied(true);
+    } catch {
+      setError("Could not copy the suggestion.");
+    }
+  };
+
+  const cancelEdit = () => {
+    setText(suggestion.text);
+    setEditing(false);
+    setError("");
+    setCopied(false);
+  };
+
+  const status = suggestion?.status || "PENDING";
+
+  const statusLabels = {
+    PENDING: "Pending review",
+    ACCEPTED: "Accepted",
+    EDITED: "Edited",
+    REJECTED: "Rejected"
+  };
+
   return (
-    <Card title="Feedback assistant">
-      <div className="btn-row">
-        {[["summarize", "Summarize"], ["simplify", "Simplify"], ["patterns", "Find patterns"], ["plan", "Suggest actions"]].map(([mode, label]) => (
-          <button key={mode} type="button" className="btn ghost small" disabled={busy} onClick={() => ask(mode)}>{label}</button>
-        ))}
-      </div>
-      {error && <div className="alert error">{error}</div>}
-      {suggestion && (
-        <>
-          <textarea rows={8} value={text} onChange={(e) => setText(e.target.value)} />
-          <div className="btn-row">
-            <button type="button" className="btn small" onClick={() => review("ACCEPTED")}>Accept</button>
-            <button type="button" className="btn ghost small" onClick={() => review("EDITED")}>Save my edit</button>
-            <button type="button" className="btn ghost small danger" onClick={() => review("REJECTED")}>Reject</button>
-            <small className="muted">{suggestion.status}</small>
+    <Card>
+      <section className="feedback-assistant">
+
+        {/* Assistant header */}
+        <div className="fa-header">
+          <div className="fa-header-icon">
+            <Sparkles size={23} />
           </div>
-        </>
-      )}
+
+          <div className="fa-heading">
+            <h3>Feedback Assistant</h3>
+            <p>
+              Understand feedback, identify improvements,
+              and plan your next revisions.
+            </p>
+          </div>
+
+          <span className="fa-ai-label">
+            <Sparkles size={12} />
+            AI-powered
+          </span>
+        </div>
+
+        {/* Assistant modes */}
+        <div className="fa-modes">
+          {modes.map((mode) => {
+            const Icon = mode.icon;
+
+            return (
+              <button
+                key={mode.id}
+                type="button"
+                className={`fa-mode ${
+                  activeMode === mode.id ? "active" : ""
+                }`}
+                disabled={busy || reviewing || editing}
+                onClick={() => ask(mode.id)}
+                aria-pressed={activeMode === mode.id}
+              >
+                <Icon size={17} />
+
+                <span>{mode.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Error message */}
+        {error && (
+          <div className="fa-error" role="alert">
+            {error}
+          </div>
+        )}
+
+        {/* Initial state */}
+        {!suggestion && !busy && !error && (
+          <div className="fa-empty">
+            <div className="fa-empty-icon">
+              <Sparkles size={26} />
+            </div>
+
+            <h4>Make every revision count</h4>
+
+            <p>
+              Choose an action above to receive AI-assisted
+              insights based on your project's feedback,
+              tasks, and progress.
+            </p>
+          </div>
+        )}
+
+        {/* Loading state */}
+        {busy && (
+          <div
+            className="fa-loading"
+            role="status"
+            aria-live="polite"
+          >
+            <LoaderCircle
+              size={30}
+              className="fa-spinner"
+            />
+
+            <h4>Analyzing your feedback...</h4>
+
+            <p>
+              Preparing insights based on your project.
+            </p>
+
+            <div className="fa-loading-lines">
+              <span />
+              <span />
+              <span />
+            </div>
+          </div>
+        )}
+
+        {/* Generated suggestion */}
+        {suggestion && !busy && (
+          <div className="fa-result">
+
+            <div className="fa-result-header">
+              <div className="fa-result-title">
+                <Sparkles size={18} />
+
+                <div>
+                  <h4>
+                    {selectedMode?.label ||
+                      "AI-generated suggestion"}
+                  </h4>
+
+                  <p>
+                    {selectedMode?.description}
+                  </p>
+                </div>
+              </div>
+
+              <div className="fa-result-tools">
+                <span
+                  className={`fa-status ${status.toLowerCase()}`}
+                >
+                  {statusLabels[status] || status}
+                </span>
+
+                <button
+                  type="button"
+                  className="fa-copy"
+                  title="Copy suggestion"
+                  aria-label="Copy suggestion"
+                  onClick={copySuggestion}
+                >
+                  {copied ? (
+                    <Check size={17} />
+                  ) : (
+                    <Copy size={17} />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Edit mode */}
+            {editing ? (
+              <div className="fa-editor">
+                <label htmlFor="assistant-edit">
+                  Edit your suggestion
+                </label>
+
+                <textarea
+                  id="assistant-edit"
+                  className="fa-textarea"
+                  rows={12}
+                  value={text}
+                  disabled={reviewing}
+                  onChange={(e) => {
+                    setText(e.target.value);
+                    setCopied(false);
+                  }}
+                  placeholder="Edit the AI-generated suggestion..."
+                />
+
+                <small>
+                  You can modify the suggestion before saving.
+                </small>
+              </div>
+            ) : (
+              <div className="fa-markdown">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  skipHtml
+                >
+                  {suggestion.text}
+                </ReactMarkdown>
+              </div>
+            )}
+
+            {/* AI disclaimer */}
+            <div className="fa-disclaimer">
+              <Sparkles size={15} />
+
+              <span>
+                AI-generated suggestions may contain mistakes.
+                Always review them before applying changes
+                to your project.
+              </span>
+            </div>
+
+            {/* Review actions */}
+            <div className="fa-footer">
+
+              <div className="fa-actions">
+                {editing ? (
+                  <>
+                    <button
+                      type="button"
+                      className="fa-btn primary"
+                      disabled={reviewing || !text.trim()}
+                      onClick={() => review("EDITED")}
+                    >
+                      {reviewing ? (
+                        <LoaderCircle
+                          size={16}
+                          className="fa-spinner"
+                        />
+                      ) : (
+                        <Save size={16} />
+                      )}
+
+                      Save my edit
+                    </button>
+
+                    <button
+                      type="button"
+                      className="fa-btn secondary"
+                      disabled={reviewing}
+                      onClick={cancelEdit}
+                    >
+                      <X size={16} />
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="fa-btn primary"
+                      disabled={
+                        reviewing || status === "ACCEPTED"
+                      }
+                      onClick={() => review("ACCEPTED")}
+                    >
+                      <Check size={16} />
+
+                      {status === "ACCEPTED"
+                        ? "Accepted"
+                        : "Accept suggestion"}
+                    </button>
+
+                    <button
+                      type="button"
+                      className="fa-btn secondary"
+                      disabled={reviewing}
+                      onClick={() => {
+                        setText(suggestion.text);
+                        setEditing(true);
+                        setError("");
+                      }}
+                    >
+                      <Pencil size={15} />
+                      Edit suggestion
+                    </button>
+
+                    <button
+                      type="button"
+                      className="fa-btn reject"
+                      disabled={
+                        reviewing || status === "REJECTED"
+                      }
+                      onClick={() => review("REJECTED")}
+                    >
+                      <X size={16} />
+
+                      {status === "REJECTED"
+                        ? "Rejected"
+                        : "Reject"}
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {reviewing && (
+                <span className="fa-saving">
+                  <LoaderCircle
+                    size={14}
+                    className="fa-spinner"
+                  />
+                  Saving...
+                </span>
+              )}
+
+            </div>
+          </div>
+        )}
+      </section>
     </Card>
   );
 }
+
 
 function FeedbackDetails() {
   const { data, actions, compName } = useProject();
@@ -430,6 +827,7 @@ export default function Feedback({ view }) {
     <>
       {bar}
       <FeedbackList items={apply(items)} />
+      {view !== "clarifications" && <Assistant />}
     </>
   );
 }
