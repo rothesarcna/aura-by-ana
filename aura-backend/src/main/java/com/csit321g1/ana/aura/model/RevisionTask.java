@@ -41,6 +41,10 @@ public class RevisionTask {
     @Column(length = 20, nullable = false)
     private TaskStatus status = TaskStatus.TO_DO;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20, columnDefinition = "varchar(20) default 'MEDIUM'")
+    private TaskPriority priority = TaskPriority.MEDIUM;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assignee_id")
     private ProjectMember assignee_id;

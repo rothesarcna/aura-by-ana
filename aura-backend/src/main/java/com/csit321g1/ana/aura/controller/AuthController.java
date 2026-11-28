@@ -17,9 +17,10 @@ public class AuthController {
     private UserService userService;
 
     @PostMapping("/register")
-    public ResponseEntity<?> register(@RequestBody User user) {
+    public ResponseEntity<?> register(@RequestBody User user,
+                                    @RequestParam(required = false) String adviserCode) {
         try {
-            User savedUser = userService.registerStudent(user);
+            User savedUser = userService.registerStudent(user, adviserCode);
             savedUser.setPassword(null); // Do not send password back to frontend
             return ResponseEntity.ok(savedUser);
         } catch (RuntimeException e) {

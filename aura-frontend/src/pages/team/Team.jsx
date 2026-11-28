@@ -1,7 +1,9 @@
-import { useState } from "react";
 import { useProject } from "../../context/ProjectContext";
-import { Card, Empty, ProgressBar, formatDate } from "../../components/ui";
+import { useEffect, useState } from "react";
+import { Card, EMPTY_FILTER, Empty, FilterBar, ProgressBar, formatDate, inDates } from "../../components/ui";
+import { projectApi } from "../../services/projectApi";
 
+const PRIORITIES = ["Low", "Medium", "High", "Urgent"];
 const TASK_STATUSES = ["To Do", "In Progress", "Needs Clarification", "Done"];
 
 function AddMember() {
@@ -33,8 +35,17 @@ function AddMember() {
 
 function AddTask() {
   const { data, actions } = useProject();
+  const initialState = {
+    title: "",
+    assignee: "",
+    componentId: "",
+    due: "",
+    priority: "Medium",
+  };
   const [form, setForm] = useState({ title: "", assignee: "", componentId: "", due: "" });
   const [error, setError] = useState("");
+  
+  
 
   const submit = async (e) => {
     e.preventDefault();
@@ -63,6 +74,11 @@ function AddTask() {
           </select>
         </label>
         <label>Deadline<input type="date" value={form.due} onChange={(e) => setForm({ ...form, due: e.target.value })} /></label>
+        <label>Priority
+          <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
+            {PRIORITIES.map((p) => <option key={p}>{p}</option>)}
+          </select>
+        </label>
         <button className="btn" type="submit">Add task</button>
       </form>
     </Card>
@@ -89,8 +105,15 @@ function AddResponsibility({ memberId }) {
 }
 
 export default function Team({ view }) {
-  const { data, actions, compName, memberName } = useProject();
+  const { data, actions, compName, remote } = useProject();
   const { members, tasks } = data;
+  const [f, setF] = useState(EMPTY_FILTER);
+  const [analytics, setAnalytics] = useState(null);
+
+   useEffect(() => {
+    if (!remote || !data.project?.id) return;
+    projectApi.getAnalytics(data.project.id).then(setAnalytics).catch(() => setAnalytics(null));
+  }, [remote, data.project?.id, tasks]);
 
   if (view === "members") {
     return (
@@ -116,22 +139,47 @@ export default function Team({ view }) {
   }
 
   if (view === "tasks") {
+    // most urgent first (priority + deadline + status), then apply the filters
+    const shownTasks = tasks
+      .filter(
+        (t) =>
+          (!f.q || t.title.toLowerCase().includes(f.q.toLowerCase())) &&
+          (!f.status || t.status === f.status) &&
+          (!f.member || t.assignee === f.member) &&
+          inDates(t.due, f.from, f.to)
+      )
+      .sort((a, b) => (b.urgency ?? 0) - (a.urgency ?? 0));
     return (
       <>
         <AddTask />
+        <FilterBar value={f} onChange={setF} statuses={TASK_STATUSES} members={members} dateLabel="Due" />
         <Card title="Assigned tasks">
           {tasks.length === 0 ? (
             <Empty text="No tasks yet." />
+          ) : shownTasks.length === 0 ? (
+            <Empty text="No tasks match your filters." />
           ) : (
             <table className="table">
-              <thead><tr><th>Task</th><th>Assigned to</th><th>Component</th><th>Due</th><th>Status</th><th /></tr></thead>
+              <thead><tr><th>Task</th><th>Priority</th><th>Assigned to</th><th>Component</th><th>Due</th><th>Status</th><th /></tr></thead>
               <tbody>
-                {tasks.map((t) => (
+                {shownTasks.map((t) => (
                   <tr key={t.id}>
                     <td>{t.title}</td>
-                    <td>{memberName(t.assignee)}</td>
+                    <td>
+                      <select value={t.priority} onChange={(e) => actions.updateTask?.(t.id, { priority: e.target.value })}>
+                        {PRIORITIES.map((p) => <option key={p}>{p}</option>)}
+                      </select>
+                    </td>
+                    <td>
+                      <select value={t.assignee} onChange={(e) => actions.updateTask?.(t.id, { assignee: e.target.value })}>
+                        <option value="">— Unassigned —</option>
+                        {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                    </td>
                     <td>{compName(t.componentId)}</td>
-                    <td>{formatDate(t.due)}</td>
+                    <td>
+                      <input type="date" value={t.due || ""} onChange={(e) => actions.updateTask?.(t.id, { due: e.target.value })} />
+                    </td>
                     <td>
                       <select value={t.status} onChange={(e) => actions.setTaskStatus(t.id, e.target.value)}>
                         {TASK_STATUSES.map((s) => <option key={s}>{s}</option>)}
@@ -189,6 +237,26 @@ export default function Team({ view }) {
           );
         })}
       </Card>
+      {analytics && (
+        <Card title="Delayed components">
+          {analytics.delayedComponents.length === 0 ? (
+            <Empty text="Nothing is late." />
+          ) : (
+            analytics.delayedComponents.map((d) => (
+              <div key={d.id} className="bar-row">
+                <span>{d.name}</span>
+                <small className="muted">{d.status}</small>
+                <b>{d.daysLate} day(s) late</b>
+              </div>
+            ))
+          )}
+          <small className="muted">
+            {analytics.outstandingTasks} open task(s) · {analytics.unresolvedFeedback} unresolved feedback
+            {analytics.avgDaysToCompleteTask != null ? ` · average ${analytics.avgDaysToCompleteTask} day(s) to finish a task` : ""}
+          </small>
+        </Card>
+      )}
+
     </>
   );
 }

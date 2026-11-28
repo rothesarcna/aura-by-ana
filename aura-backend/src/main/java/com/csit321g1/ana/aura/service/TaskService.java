@@ -14,6 +14,7 @@ import com.csit321g1.ana.aura.model.TaskStatus;
 import com.csit321g1.ana.aura.repository.RevisionTaskRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.csit321g1.ana.aura.model.TaskPriority;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -31,15 +32,22 @@ public class TaskService {
     private final AccessService access;
     private final SnapshotService snapshots;
     private final HistoryService history;
+    private final NotificationService notifications;
 
     public TaskService(RevisionTaskRepository tasks,
                        AccessService access,
                        SnapshotService snapshots,
-                       HistoryService history) {
+                       HistoryService history,
+                       NotificationService notifications) {
         this.tasks = tasks;
         this.access = access;
         this.snapshots = snapshots;
         this.history = history;
+        this.notifications = notifications;
+    }
+
+    private static TaskPriority priorityOrDefault(RevisionTask t) {
+        return t.getPriority() == null ? TaskPriority.MEDIUM : t.getPriority();
     }
 
     /**
@@ -80,6 +88,7 @@ public class TaskService {
         t.setAssignee_id(assignee);
         t.setDueDate(req.dueDate());
         t.setStatus(status);
+        t.setPriority(req.priority() == null ? TaskPriority.MEDIUM : req.priority());
         t.setCompletedAt(status == TaskStatus.DONE ? Instant.now() : null);
         t.setCreated_by_id(ctx.user());
         t = tasks.save(t);
@@ -92,6 +101,11 @@ public class TaskService {
                 .feedback(feedback)
                 .task(t)
                 .save();
+
+        if (assignee != null && assignee.getUser() != null && !assignee.getUser().getId().equals(ctx.user().getId())) {
+            notifications.notifyUser(assignee.getUser(), ctx.project(), "TASK_ASSIGNED",
+                    "You were assigned: " + t.getTitle() + (t.getDueDate() == null ? "" : " (due " + t.getDueDate() + ")"));
+        }
         return snapshots.load(ctx.project()).toTask(t);
     }
 
@@ -146,18 +160,23 @@ public class TaskService {
         AccessService.ProjectAccess ctx = access.require(projectId, userId);
         RevisionTask t = access.task(projectId, taskId);
         ProjectMember newAssignee = access.assignee(projectId, req.assigneeId());
+        boolean reassigned = newAssignee != null
+                && (t.getAssignee_id() == null || !t.getAssignee_id().getId().equals(newAssignee.getId()));
+        TaskPriority newPriority = req.priority() == null ? priorityOrDefault(t) : req.priority();
 
         List<String> changes = new ArrayList<>();
         Text.diff(changes, "title", t.getTitle(), Text.clean(req.title()));
         Text.diff(changes, "assignee", t.getAssignee_id() == null ? null : t.getAssignee_id().getName(),
                 newAssignee == null ? null : newAssignee.getName());
         Text.diff(changes, "due date", t.getDueDate(), req.dueDate());
+        Text.diff(changes, "priority", priorityOrDefault(t).getLabel(), newPriority.getLabel());
         Text.diffQuiet(changes, "description", t.getDescription(), Text.clean(req.description()));
 
         t.setTitle(Text.clean(req.title()));
         t.setDescription(Text.clean(req.description()));
         t.setAssignee_id(newAssignee);
         t.setDueDate(req.dueDate());
+        t.setPriority(newPriority);
         tasks.save(t);
 
         if (!changes.isEmpty()) {
@@ -167,6 +186,10 @@ public class TaskService {
                     .feedback(t.getFeedback_id())
                     .task(t)
                     .save();
+        }
+        if (reassigned && newAssignee.getUser() != null && !newAssignee.getUser().getId().equals(ctx.user().getId())) {
+            notifications.notifyUser(newAssignee.getUser(), ctx.project(), "TASK_ASSIGNED",
+                    "You were assigned: " + t.getTitle());
         }
         return snapshots.load(ctx.project()).toTask(t);
     }

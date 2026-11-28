@@ -11,6 +11,7 @@ export default function ComponentForm({ initial, members = [], onSave, onCancel 
     due: initial?.due ?? "",
     owner: initial?.owner ?? "",
     progress: initial?.progress ?? 0,
+    type: initial?.type ?? "Chapter",
   });
   const [error, setError] = useState("");
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
@@ -41,6 +42,14 @@ export default function ComponentForm({ initial, members = [], onSave, onCancel 
           <select value={form.status} onChange={set("status")}>
             {STATUSES.map((s) => (
               <option key={s}>{s}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Type
+          <select value={form.type} onChange={set("type")}>
+            {["Chapter", "Proposal", "Documentation", "Prototype", "Presentation", "Other"].map((t) => (
+              <option key={t}>{t}</option>
             ))}
           </select>
         </label>

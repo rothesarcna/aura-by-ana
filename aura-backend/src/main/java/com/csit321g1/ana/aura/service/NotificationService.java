@@ -1,51 +1,83 @@
 package com.csit321g1.ana.aura.service;
 
+import com.csit321g1.ana.aura.dto.NotificationDtos.NotificationResponse;
+import com.csit321g1.ana.aura.exception.NotFoundException;
 import com.csit321g1.ana.aura.model.Notification;
+import com.csit321g1.ana.aura.model.Project;
+import com.csit321g1.ana.aura.model.ProjectMember;
 import com.csit321g1.ana.aura.model.User;
 import com.csit321g1.ana.aura.repository.NotificationRepository;
-import com.csit321g1.ana.aura.repository.UserRepository;
-import org.springframework.beans.factory.annotation.Autowired;
+import com.csit321g1.ana.aura.repository.ProjectMemberRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
+@Transactional
 public class NotificationService {
 
-    @Autowired
-    private NotificationRepository notificationRepository;
-    
-    @Autowired
-    private UserRepository userRepository;
+    private final NotificationRepository repo;
+    private final ProjectMemberRepository members;
 
-    public Notification createNotification(Long userId, String type, String message) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-                
-        Notification notification = new Notification();
-        notification.setUser(user);
-        notification.setNotification_type(type);
-        notification.setMessage(message);
-        
-        return notificationRepository.save(notification);
+    public NotificationService(NotificationRepository repo, ProjectMemberRepository members) {
+        this.repo = repo;
+        this.members = members;
     }
 
-    public List<Notification> getUserNotifications(Long userId) {
-        return notificationRepository.findByUser_IdOrderByCreatedAtDesc(userId);
+    /** One notification for one user. An identical one already created today is skipped. */
+    public void notifyUser(User user, Project project, String type, String message) {
+        if (user == null) return;
+        Instant since = LocalDate.now().atStartOfDay(ZoneId.systemDefault()).toInstant();
+        if (repo.existsRecent(user.getId(), type, message, since)) return;
+        Notification n = new Notification();
+        n.setUser(user);
+        n.setProject(project);
+        n.setNotification_type(type);
+        n.setMessage(message);
+        repo.save(n);
     }
 
-    public Notification markAsRead(Long notificationId) {
-        Notification notification = notificationRepository.findById(notificationId)
-                .orElseThrow(() -> new RuntimeException("Notification not found"));
-        
-        // Aligns with the ERD's read_at Instant field
-        if (notification.getRead_at() == null) {
-            notification.setRead_at(Instant.now());
-            // If you still have the isRead boolean in the entity:
-            notification.setRead(true);
+    /** Everyone with an account in the project, except the person who caused the event. */
+    public void notifyProject(Project project, User except, String type, String message) {
+        for (ProjectMember m : members.findByProjectIdOrderByIdAsc(project.getId())) {
+            if (m.isActive() && m.getUser() != null
+                    && (except == null || !m.getUser().getId().equals(except.getId()))) {
+                notifyUser(m.getUser(), project, type, message);
+            }
         }
-        
-        return notificationRepository.save(notification);
+    }
+
+    @Transactional(readOnly = true)
+    public List<NotificationResponse> list(Long userId) {
+        return repo.findByUser_IdOrderByCreatedAtDesc(userId).stream()
+                .map(this::toResponse)
+                .collect(Collectors.toList());
+    }
+
+    public NotificationResponse markRead(Long userId, Long id) {
+        Notification n = repo.findById(id)
+                .filter(x -> x.getUser().getId().equals(userId))
+                .orElseThrow(() -> new NotFoundException("Notification not found."));
+        if (n.getRead_at() == null) {
+            n.setRead_at(Instant.now());
+            n.setRead(true);
+        }
+        return toResponse(repo.save(n));
+    }
+
+    private NotificationResponse toResponse(Notification n) {
+        return new NotificationResponse(
+                n.getId(),
+                n.getNotification_type(),
+                n.getMessage(),
+                n.isRead(),
+                n.getCreatedAt(),
+                n.getProject() == null ? null : n.getProject().getId(),
+                n.getProject() == null ? null : n.getProject().getTitle());
     }
 }

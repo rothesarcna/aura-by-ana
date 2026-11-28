@@ -1,34 +1,43 @@
 package com.csit321g1.ana.aura.controller;
 
-import com.csit321g1.ana.aura.model.Submission;
+import com.csit321g1.ana.aura.dto.SubmissionDtos.SubmissionRequest;
+import com.csit321g1.ana.aura.dto.SubmissionDtos.SubmissionResponse;
 import com.csit321g1.ana.aura.service.SubmissionService;
-import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
-@RequestMapping("/api/components/{componentId}/submissions")
+@RequestMapping("/api/projects/{projectId}")
 public class SubmissionController {
 
-    @Autowired
-    private SubmissionService submissionService;
+    private final SubmissionService service;
 
-    @PostMapping
-    public ResponseEntity<?> createSubmission(@PathVariable Long componentId, @RequestBody Submission submission) {
-        try {
-            // Assuming the frontend passes submittedBy.id inside the submission object payload
-            Long userId = submission.getSubmitted_by().getId(); 
-            return ResponseEntity.ok(submissionService.addSubmission(componentId, userId, submission));
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+    public SubmissionController(SubmissionService service) {
+        this.service = service;
     }
 
-    @GetMapping
-    public ResponseEntity<List<Submission>> getSubmissions(@PathVariable Long componentId) {
-        return ResponseEntity.ok(submissionService.getSubmissionsForComponent(componentId));
+    @PostMapping("/components/{componentId}/submissions")
+    public ResponseEntity<SubmissionResponse> create(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable Long projectId, @PathVariable Long componentId,
+            @Valid @RequestBody SubmissionRequest body) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.add(userId, projectId, componentId, body));
+    }
+
+    @GetMapping("/submissions")
+    public ResponseEntity<List<SubmissionResponse>> list(
+            @RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+            @PathVariable Long projectId) {
+        return ResponseEntity.ok(service.listForProject(userId, projectId));
     }
 }

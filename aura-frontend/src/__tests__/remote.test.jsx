@@ -94,7 +94,7 @@ describe("server-backed dashboard", () => {
     await ui.type(box, "Group by theme and state the research gap.");
     await ui.click(screen.getByRole("button", { name: "Save as new version" }));
     expect(await screen.findByText("Version history")).toBeInTheDocument();
-    expect(screen.getByText("Version 2 of 2")).toBeInTheDocument();
+    expect(await screen.findByText("Version 2 of 2")).toBeInTheDocument();
     expect(server.feedback.map((f) => f.status)).toEqual(["Superseded", "Open"]);
     expect(screen.getByText("Group the studies by theme.", { selector: "p" })).toBeInTheDocument(); // old text still readable
     expect(screen.getByText(/linked to an earlier version/)).toBeInTheDocument(); // task stays with v1

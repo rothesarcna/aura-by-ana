@@ -93,3 +93,40 @@ export function CommitRow({ entry }) {
     </div>
   );
 }
+
+/* ---------- search / filter helpers (reuse the existing toolbar styles) ---------- */
+export const EMPTY_FILTER = { q: "", status: "", member: "", from: "", to: "" };
+
+export const inDates = (iso, from, to) => {
+  const d = String(iso || "").slice(0, 10);
+  return (!from || d >= from) && (!to || (d && d <= to));
+};
+
+export function FilterBar({ value, onChange, statuses = [], members = [], dateLabel = "Date" }) {
+  const set = (key) => (e) => onChange({ ...value, [key]: e.target.value });
+  return (
+    <div className="toolbar">
+      <input placeholder="Search…" value={value.q} onChange={set("q")} aria-label="Search" />
+      {statuses.length > 0 && (
+        <select value={value.status} onChange={set("status")} aria-label="Filter by status">
+          <option value="">All statuses</option>
+          {statuses.map((s) => (
+            <option key={s}>{s}</option>
+          ))}
+        </select>
+      )}
+      {members.length > 0 && (
+        <select value={value.member} onChange={set("member")} aria-label="Filter by member">
+          <option value="">Anyone</option>
+          {members.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.name}
+            </option>
+          ))}
+        </select>
+      )}
+      <input type="date" value={value.from} onChange={set("from")} aria-label={`${dateLabel} from`} />
+      <input type="date" value={value.to} onChange={set("to")} aria-label={`${dateLabel} to`} />
+    </div>
+  );
+}

@@ -1,32 +1,39 @@
 package com.csit321g1.ana.aura.controller;
 
-import com.csit321g1.ana.aura.model.Notification;
+import com.csit321g1.ana.aura.dto.NotificationDtos.NotificationResponse;
+import com.csit321g1.ana.aura.service.AccessService;
 import com.csit321g1.ana.aura.service.NotificationService;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
-@RequestMapping("/api/users/{userId}/notifications")
+@RequestMapping("/api/notifications")
 public class NotificationController {
 
-    @Autowired
-    private NotificationService notificationService;
+    private final NotificationService service;
+    private final AccessService access;
 
-    @GetMapping
-    public ResponseEntity<List<Notification>> getNotifications(@PathVariable Long userId) {
-        return ResponseEntity.ok(notificationService.getUserNotifications(userId));
+    public NotificationController(NotificationService service, AccessService access) {
+        this.service = service;
+        this.access = access;
     }
 
-    @PatchMapping("/{notificationId}/read")
-    public ResponseEntity<?> markAsRead(@PathVariable Long userId, @PathVariable Long notificationId) {
-        try {
-            return ResponseEntity.ok(notificationService.markAsRead(notificationId));
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+    @GetMapping
+    public List<NotificationResponse> list(@RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId) {
+        access.requireUser(userId);
+        return service.list(userId);
+    }
+
+    @PatchMapping("/{id}/read")
+    public NotificationResponse read(@RequestHeader(value = ApiHeaders.USER_ID, required = false) Long userId,
+                                     @PathVariable Long id) {
+        access.requireUser(userId);
+        return service.markRead(userId, id);
     }
 }

@@ -31,6 +31,9 @@ public class ProjectMember {
     @Column(nullable = false)
     private String name;
 
+    @Column(columnDefinition = "TEXT")
+    private String responsibilities;
+
     private String email;
 
     private String role = "Member";

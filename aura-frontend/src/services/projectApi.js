@@ -64,6 +64,8 @@ export const mapFeedback = (f) => ({
   version: f.version || 1,
   previousFeedbackId: sid(f.previousFeedbackId),
   supersededById: sid(f.supersededById),
+  clarifiesFeedbackId: sid(f.clarifiesFeedbackId),
+  possibleConflicts: (f.possibleConflicts || []).map(String),
   replies: (f.replies || []).map((r) => ({ id: sid(r.id), author: r.author, date: r.createdAt, text: r.text })),
 });
 
@@ -74,6 +76,8 @@ export const mapTask = (t) => ({
   assignee: sid(t.assigneeId),
   componentId: sid(t.componentId),
   feedbackId: sid(t.feedbackId),
+  priority: t.priority || "Medium",
+  urgency: t.urgency ?? 0,
   status: t.status,
   due: t.dueDate || "",
   overdue: !!t.overdue,
@@ -85,7 +89,8 @@ export const mapMember = (m) => ({
   role: m.role || "Member",
   email: m.email || "",
   userId: sid(m.userId),
-  responsibilities: [],
+  registered: !!m.registered,
+  responsibilities: (m.responsibilities || "").split("\n").filter(Boolean),
 });
 
 const historyKind = (h) => {
@@ -123,6 +128,27 @@ export const deriveRevisions = (components, tasks) =>
     tasks: tasks.filter((t) => t.componentId === c.id).map((t) => ({ id: t.id, text: t.title, done: t.status === "Done" })),
   }));
 
+  const NOTE_CATEGORY = {
+    NEW_FEEDBACK: "feedback",
+    CLARIFICATION: "feedback",
+    CLARIFICATION_PENDING: "feedback",
+    TASK_ASSIGNED: "team",
+    STATUS_CHANGED: "approval",
+    TASK_OVERDUE: "reminder",
+    TASK_DUE_SOON: "reminder",
+    DEADLINE: "deadline",
+  };
+
+  export const mapNotification = (n) => ({
+    id: String(n.id),
+    category: NOTE_CATEGORY[n.type] || "team",
+    text: n.message,
+    date: n.createdAt,
+    read: !!n.read,
+    projectId: n.projectId == null ? "" : String(n.projectId),
+    projectTitle: n.projectTitle || "",
+  });
+
 /* -------------------------------- requests -------------------------------- */
 
 const P = (projectId) => `/projects/${projectId}`;
@@ -142,7 +168,26 @@ export const projectApi = {
       data(api.get(`${P(projectId)}/members`)),
       data(api.get(`${P(projectId)}/history`)),
     ]);
+    
+    // one request for every submission in the project (a missing endpoint just means "none yet")
+    const isUrl = (v) => /^https?:/i.test(v || "");
+    const submissions = await data(api.get(`${P(projectId)}/submissions`))
+      .then((list) =>
+        list.map((x) => ({
+          id: `sub-${x.id}`,
+          kind: isUrl(x.reference) ? "link" : "file",
+          name: x.notes || x.reference,
+          url: isUrl(x.reference) ? x.reference : "",
+          size: `v${x.version}`,
+          addedBy: x.submittedBy,
+          date: x.submittedAt,
+          componentId: String(x.componentId),
+        }))
+      )
+      .catch(() => []);
+
     return {
+      submissions,
       components: components.map(mapComponent),
       feedbackAll: feedback.map(mapFeedback),
       tasks: tasks.map(mapTask),
@@ -175,4 +220,20 @@ export const projectApi = {
   deleteTask: (projectId, id) => data(api.delete(`${P(projectId)}/tasks/${id}`)),
 
   recordRevision: (projectId, body) => data(api.post(`${P(projectId)}/revisions`, body)).then(mapHistory),
+
+  updateTask: (projectId, id, body) => data(api.put(`${P(projectId)}/tasks/${id}`, body)).then(mapTask),
+  updateMember: (projectId, id, body) => data(api.put(`${P(projectId)}/members/${id}`, body)).then(mapMember),
+
+  addSubmission: (projectId, componentId, body) =>
+    data(api.post(`${P(projectId)}/components/${componentId}/submissions`, body)),
+
+  listNotifications: () => data(api.get("/notifications")).then((list) => list.map(mapNotification)),
+  markNotificationRead: (id) => data(api.patch(`/notifications/${id}/read`)),
+
+  askAssistant: (projectId, mode) => data(api.post(`${P(projectId)}/assistant/${mode}`)),
+  reviewSuggestion: (projectId, id, status, text) =>
+    data(api.patch(`${P(projectId)}/assistant/suggestions/${id}`, { status, text })),
+
+  generateReport: (projectId) => data(api.post(`${P(projectId)}/reports`, {})),
+  getAnalytics: (projectId) => data(api.get(`${P(projectId)}/analytics`)),
 };

@@ -16,13 +16,13 @@ public final class FeedbackDtos {
     }
 
     public record FeedbackRequest(
-            @NotNull Long componentId,
-            FeedbackType type,
-            @NotBlank @Size(max = 5000) String text,
-            @Size(max = 150) String givenBy,
-            LocalDate receivedOn) {
+        @NotNull Long componentId,
+        FeedbackType type,
+        @NotBlank @Size(max = 5000) String text,
+        @Size(max = 150) String givenBy,
+        LocalDate receivedOn,
+        Long clarifiesFeedbackId) {
     }
-
     /** The instructor changed their instructions: records a new version and keeps the old one. */
     public record ReviseRequest(
             @NotBlank @Size(max = 5000) String text,
@@ -39,26 +39,27 @@ public final class FeedbackDtos {
     }
 
     public record FeedbackResponse(
-            Long id,
-            Long projectId,
-            Long componentId,
-            String componentName,
-            FeedbackType type,
-            String text,
-            String givenBy,
-            LocalDate receivedOn,
-            FeedbackStatus status,
-            int version,
-            Long previousFeedbackId,
-            Long supersededById,
-            int openTaskCount,
-            int totalTaskCount,
-            String recordedBy,
-            Instant createdAt,
-            Instant resolvedAt,
-            List<ReplyResponse> replies) {
+        Long id,
+        Long projectId,
+        Long componentId,
+        String componentName,
+        FeedbackType type,
+        String text,
+        String givenBy,
+        LocalDate receivedOn,
+        FeedbackStatus status,
+        int version,
+        Long previousFeedbackId,
+        Long supersededById,
+        int openTaskCount,
+        int totalTaskCount,
+        String recordedBy,
+        Instant createdAt,
+        Instant resolvedAt,
+        List<ReplyResponse> replies,
+        Long clarifiesFeedbackId,
+        List<Long> possibleConflicts) {
     }
-
     public record ReplyResponse(Long id, String author, String text, Instant createdAt) {
     }
 
